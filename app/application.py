@@ -1,6 +1,7 @@
 """FastAPI application factory."""
 
-from fastapi import FastAPI, APIRouter
+from fastapi import APIRouter, FastAPI
+
 from app.config import settings
 
 # Create main router

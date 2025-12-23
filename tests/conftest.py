@@ -1,8 +1,9 @@
 """Pytest configuration and shared fixtures."""
 
 import os
-import pytest
 from typing import AsyncGenerator, Generator
+
+import pytest
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 
