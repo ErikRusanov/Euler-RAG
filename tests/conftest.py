@@ -20,6 +20,12 @@ def test_settings() -> Settings:
     os.environ.setdefault("DEBUG", "True")
     os.environ.setdefault("HOST", "127.0.0.1")
     os.environ.setdefault("PORT", "8000")
+    # Database settings for tests
+    os.environ.setdefault("DB_HOST", "localhost")
+    os.environ.setdefault("DB_PORT", "5432")
+    os.environ.setdefault("DB_USER", "test_user")
+    os.environ.setdefault("DB_PASSWORD", "test_password")
+    os.environ.setdefault("DB_NAME", "test_db")
 
     return Settings()
 

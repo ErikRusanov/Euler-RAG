@@ -3,6 +3,7 @@
 from fastapi import APIRouter, FastAPI
 
 from app.config import settings
+from app.utils.db import close_db, init_db
 
 # Create main router
 router = APIRouter()
@@ -31,5 +32,15 @@ def create_app() -> FastAPI:
 
     # Setup routes
     app.include_router(router)
+
+    # Initialize database connection on startup
+    @app.on_event("startup")
+    async def startup_event():
+        await init_db()
+
+    # Close database connections on shutdown
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        await close_db()
 
     return app
