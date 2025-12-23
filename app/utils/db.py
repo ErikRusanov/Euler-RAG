@@ -1,6 +1,7 @@
 """Database connection utilities."""
 
 import sys
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import text
@@ -45,12 +46,45 @@ async def verify_db_connection():
         await conn.execute(text("SELECT 1"))
 
 
+async def run_migrations():
+    """Run database migrations using Alembic."""
+    import asyncio
+
+    from alembic import command
+    from alembic.config import Config
+
+    # Get the path to alembic.ini (should be in project root)
+    project_root = Path(__file__).resolve().parents[2]
+    alembic_ini_path = project_root / "alembic.ini"
+
+    if not alembic_ini_path.exists():
+        raise FileNotFoundError(
+            f"Alembic configuration file not found at {alembic_ini_path}"
+        )
+
+    # Create Alembic config
+    alembic_cfg = Config(str(alembic_ini_path))
+
+    # Set the database URL dynamically
+    db_url = get_db_url()
+    alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+
+    # Run migrations using command.upgrade
+    # This is synchronous but works correctly with async migrations
+    # because env.py handles async internally via asyncio.run
+    # We run it in a thread to avoid blocking the event loop
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+
+
 async def init_db():
-    """Initialize database connection. Exits application if connection fails."""
+    """Initialize database connection and run migrations. Exits application if connection fails."""
     try:
+        # Run migrations first
+        await run_migrations()
+        # Then verify connection
         await verify_db_connection()
     except Exception as e:
-        print(f"Failed to connect to database: {e}", file=sys.stderr)
+        print(f"Failed to initialize database: {e}", file=sys.stderr)
         sys.exit(1)
 
 

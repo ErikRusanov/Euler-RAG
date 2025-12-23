@@ -4,26 +4,26 @@ clean:
 	@bash scripts/clean.sh
 
 format:
-	@echo "Очистка неиспользуемых импортов..."
+	@echo "Removing unused imports..."
 	@autoflake --in-place --remove-all-unused-imports --remove-unused-variables --recursive app/ tests/
-	@echo "Сортировка импортов..."
+	@echo "Sorting imports..."
 	@isort app/ tests/ --profile black
-	@echo "Форматирование Python файлов..."
+	@echo "Formatting Python files..."
 	@black app/ tests/ --line-length 88
-	@echo "Форматирование завершено!"
+	@echo "Formatting complete!"
 
 db-up:
-	@echo "Запуск PostgreSQL через Docker Compose..."
+	@echo "Starting PostgreSQL via Docker Compose..."
 	@docker-compose up -d postgres
-	@echo "Ожидание готовности БД..."
+	@echo "Waiting for the database to become ready..."
 	@docker-compose exec -T postgres pg_isready -U $$(grep DB_USER .env 2>/dev/null | cut -d '=' -f2 || echo "postgres") || sleep 2
 
 db-down:
-	@echo "Остановка PostgreSQL..."
+	@echo "Stopping PostgreSQL..."
 	@docker-compose down
 
 db-restart:
-	@echo "Перезапуск PostgreSQL..."
+	@echo "Restarting PostgreSQL..."
 	@docker-compose restart postgres
 
 db-logs:
