@@ -1,2 +1,1 @@
 """Euler RAG application package."""
-

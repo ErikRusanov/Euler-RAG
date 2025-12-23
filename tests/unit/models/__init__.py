@@ -1,2 +1,1 @@
 """Models unit tests package."""
-

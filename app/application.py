@@ -1,4 +1,5 @@
 """FastAPI application factory."""
+
 from fastapi import FastAPI, APIRouter
 from app.config import settings
 
@@ -26,9 +27,8 @@ def create_app() -> FastAPI:
         version=settings.API_VERSION,
         debug=settings.DEBUG,
     )
-    
+
     # Setup routes
     app.include_router(router)
-    
-    return app
 
+    return app

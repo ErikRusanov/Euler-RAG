@@ -1,4 +1,5 @@
 """Pytest configuration and shared fixtures."""
+
 import os
 import pytest
 from typing import AsyncGenerator, Generator
@@ -18,7 +19,7 @@ def test_settings() -> Settings:
     os.environ.setdefault("DEBUG", "True")
     os.environ.setdefault("HOST", "127.0.0.1")
     os.environ.setdefault("PORT", "8000")
-    
+
     return Settings()
 
 
@@ -41,4 +42,3 @@ async def async_client(app) -> AsyncGenerator[AsyncClient, None]:
     """Create async test client for FastAPI application."""
     async with AsyncClient(app=app, base_url="http://test") as async_test_client:
         yield async_test_client
-
