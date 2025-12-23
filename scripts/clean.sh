@@ -1,40 +1,40 @@
 #!/bin/bash
 
-# Скрипт для очистки временных файлов и директорий проекта
+# Script for cleaning up temporary files and directories of the project
 
 set -e
 
-# Переход в корневую директорию проекта
+# Go to the project's root directory
 cd "$(dirname "$0")/.."
 
-echo "Очистка временных файлов..."
+echo "Cleaning temporary files..."
 
-# Удаление всех __pycache__ директорий
+# Remove all __pycache__ directories
 find . -type d -name "__pycache__" -not -path "./venv/*" -exec rm -rf {} + 2>/dev/null || true
 
-# Удаление .coverage файла
+# Remove .coverage file
 if [ -f .coverage ]; then
     rm -f .coverage
-    echo "  ✓ Удален .coverage"
+    echo "  ✓ Removed .coverage"
 fi
 
-# Удаление coverage.xml файла
+# Remove coverage.xml file
 if [ -f coverage.xml ]; then
     rm -f coverage.xml
-    echo "  ✓ Удален coverage.xml"
+    echo "  ✓ Removed coverage.xml"
 fi
 
-# Удаление htmlcov директории
+# Remove htmlcov directory
 if [ -d htmlcov ]; then
     rm -rf htmlcov
-    echo "  ✓ Удалена директория htmlcov"
+    echo "  ✓ Removed htmlcov directory"
 fi
 
-# Удаление pytest cache
+# Remove pytest cache
 if [ -d .pytest_cache ]; then
     rm -rf .pytest_cache
-    echo "  ✓ Удалена директория .pytest_cache"
+    echo "  ✓ Removed .pytest_cache directory"
 fi
 
-echo "Очистка завершена!"
+echo "Cleanup completed!"
 
