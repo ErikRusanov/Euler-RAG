@@ -1,0 +1,2 @@
+"""Euler RAG application package."""
+
