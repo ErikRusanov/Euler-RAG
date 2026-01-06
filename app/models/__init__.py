@@ -1,6 +1,7 @@
 """Data models package."""
 
 from app.models.base import BaseModel
+from app.models.document import Document, DocumentStatus
 from app.models.exceptions import (
     DatabaseConnectionError,
     InvalidFilterError,
@@ -18,4 +19,6 @@ __all__ = [
     "InvalidFilterError",
     "Subject",
     "Teacher",
+    "Document",
+    "DocumentStatus",
 ]
