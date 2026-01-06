@@ -1,4 +1,4 @@
-.PHONY: clean format db-up db-down db-restart db-logs test test-setup test-unit test-cov
+.PHONY: clean format db-up db-down db-restart db-logs
 
 clean:
 	@bash scripts/clean.sh
@@ -44,4 +44,3 @@ test-unit:
 test-cov:
 	@echo "Running tests with coverage..."
 	@pytest tests/ --cov=app --cov-report=html --cov-report=xml --cov-report=term
-

@@ -54,8 +54,9 @@ def run_migrations_offline() -> None:
 
     """
     # Set the database URL dynamically from settings
-    from app.utils.db import get_db_url
-    db_url = get_db_url()
+    from app.config import get_settings
+    settings = get_settings()
+    db_url = settings.database_url_sync  # Use sync URL for Alembic
     config.set_main_option("sqlalchemy.url", db_url)
     
     url = config.get_main_option("sqlalchemy.url")
@@ -84,10 +85,11 @@ async def run_async_migrations() -> None:
     """
     # Set the database URL dynamically from settings
     # This is done here to avoid import-time evaluation issues
-    from app.utils.db import get_db_url
+    from app.config import get_settings
+    settings = get_settings()
     
     # Override the URL if it's not already set or if we want to use dynamic URL
-    db_url = get_db_url()
+    db_url = settings.database_url  # Use async URL
     config.set_main_option("sqlalchemy.url", db_url)
 
     connectable = async_engine_from_config(

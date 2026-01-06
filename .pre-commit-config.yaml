@@ -1,0 +1,66 @@
+# Pre-commit hooks for code quality
+# Install: pip install pre-commit
+# Setup: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+      - id: end-of-file-fixer
+        name: Fix end of files
+      - id: check-yaml
+        name: Check YAML syntax
+      - id: check-added-large-files
+        name: Check for large files
+        args: ['--maxkb=500']
+      - id: check-json
+        name: Check JSON syntax
+      - id: check-toml
+        name: Check TOML syntax
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+      - id: detect-private-key
+        name: Detect private keys
+
+  # Python code formatting
+  - repo: https://github.com/pycqa/autoflake
+    rev: v2.2.1
+    hooks:
+      - id: autoflake
+        name: Remove unused imports
+        args:
+          - --in-place
+          - --remove-all-unused-imports
+          - --remove-unused-variables
+          - --remove-duplicate-keys
+          - --ignore-init-module-imports
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: Sort imports
+        args: ["--profile", "black", "--line-length", "88"]
+
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        name: Format code with black
+        args: ["--line-length", "88"]
+        language_version: python3
+
+  # Python linting
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        name: Lint with flake8
+        args:
+          - --max-line-length=88
+          - --extend-ignore=E203,W503
+          - --exclude=.git,__pycache__,venv,.venv,alembic/versions

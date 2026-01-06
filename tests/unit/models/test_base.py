@@ -1,22 +1,21 @@
 """Unit tests for BaseModel with CRUD operations."""
 
 import pytest
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import String
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel
 from app.models.exceptions import InvalidFilterError, RecordNotFoundError
-from app.utils.db import Base
 
 
-class SampleUser(BaseModel, Base):
+class SampleUser(BaseModel):
     """Sample model for testing BaseModel CRUD operations."""
 
     __tablename__ = "test_users"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False)
-    email = Column(String(100), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    email: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
 
 
 @pytest.mark.asyncio
@@ -214,3 +213,79 @@ async def test_to_dict(db_session: AsyncSession):
     assert user_dict["id"] == user.id
     assert user_dict["name"] == "Dict User"
     assert user_dict["email"] == "dict@example.com"
+    # Check that timestamps are included
+    assert "created_at" in user_dict
+    assert "updated_at" in user_dict
+
+
+@pytest.mark.asyncio
+async def test_timestamps_auto_created(db_session: AsyncSession):
+    """Test: BaseModel should automatically set timestamps on creation."""
+    # Act
+    user = await SampleUser.create(
+        db_session, name="Timestamp User", email="timestamp@example.com"
+    )
+    await db_session.commit()
+
+    # Assert
+    assert user.created_at is not None
+    assert user.updated_at is not None
+    assert user.created_at == user.updated_at  # Should be same on creation
+
+
+@pytest.mark.asyncio
+async def test_count_method(db_session: AsyncSession):
+    """Test: BaseModel.count() should return count of records."""
+    # Arrange
+    await SampleUser.create(db_session, name="User 1", email="user1@example.com")
+    await SampleUser.create(db_session, name="User 2", email="user2@example.com")
+    await SampleUser.create(db_session, name="Alice", email="alice@example.com")
+    await db_session.commit()
+
+    # Act
+    total_count = await SampleUser.count(db_session)
+    alice_count = await SampleUser.count(db_session, name="Alice")
+
+    # Assert
+    assert total_count == 3
+    assert alice_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_all_with_pagination(db_session: AsyncSession):
+    """Test: BaseModel.get_all() should support limit and offset."""
+    # Arrange
+    for i in range(10):
+        await SampleUser.create(
+            db_session, name=f"User {i}", email=f"user{i}@example.com"
+        )
+    await db_session.commit()
+
+    # Act - get first 5
+    page1 = await SampleUser.get_all(db_session, limit=5, offset=0)
+    # Act - get next 5
+    page2 = await SampleUser.get_all(db_session, limit=5, offset=5)
+
+    # Assert
+    assert len(page1) == 5
+    assert len(page2) == 5
+    assert page1[0].id != page2[0].id  # Different records
+
+
+@pytest.mark.asyncio
+async def test_repr_method(db_session: AsyncSession):
+    """Test: BaseModel.__repr__() should return readable string representation."""
+    # Arrange
+    user = await SampleUser.create(
+        db_session, name="Repr User", email="repr@example.com"
+    )
+    await db_session.commit()
+
+    # Act
+    repr_str = repr(user)
+
+    # Assert
+    assert "SampleUser" in repr_str
+    assert f"id={user.id}" in repr_str
+    assert "Repr User" in repr_str
+    assert "repr@example.com" in repr_str

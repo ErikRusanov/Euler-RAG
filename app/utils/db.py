@@ -1,107 +1,188 @@
-"""Database connection utilities."""
+"""Database connection utilities with proper dependency injection."""
 
-import sys
-from pathlib import Path
+import logging
+from collections.abc import AsyncGenerator
 from typing import Optional
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.orm import DeclarativeBase
 
-from app.config import settings
+from app.config import get_settings
 
-# Base class for models
-Base = declarative_base()
-
-# Global engine and session factory
-_engine: Optional[create_async_engine] = None
-_session_factory: Optional[async_sessionmaker] = None
-
-
-def get_db_url() -> str:
-    """Build database URL from settings."""
-    return (
-        f"postgresql+asyncpg://{settings.DB_USER}:{settings.DB_PASSWORD}"
-        f"@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
-    )
+logger = logging.getLogger(__name__)
 
 
-async def get_db_engine():
-    """Get or create database engine."""
-    global _engine
-    if _engine is None:
-        db_url = get_db_url()
-        _engine = create_async_engine(
-            db_url,
-            echo=settings.DEBUG,
+class Base(DeclarativeBase):
+    """Base class for all SQLAlchemy models using modern DeclarativeBase."""
+
+
+class DatabaseManager:
+    """Database manager handling engine lifecycle and session creation.
+
+    This class encapsulates database connection management and provides
+    dependency injection for database sessions.
+    """
+
+    def __init__(self) -> None:
+        """Initialize database manager with None values."""
+        self._engine: Optional[AsyncEngine] = None
+        self._session_factory: Optional[async_sessionmaker[AsyncSession]] = None
+
+    def init_engine(self) -> AsyncEngine:
+        """Initialize and return database engine.
+
+        Creates engine only once and reuses it for subsequent calls.
+        Uses connection pooling and pre-ping for connection health checks.
+        """
+        if self._engine is not None:
+            return self._engine
+
+        settings = get_settings()
+
+        self._engine = create_async_engine(
+            settings.database_url,
+            echo=settings.debug,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+            pool_timeout=settings.db_pool_timeout,
+            pool_recycle=settings.db_pool_recycle,
             pool_pre_ping=True,  # Verify connections before using
-        )
-    return _engine
-
-
-async def verify_db_connection():
-    """Verify database connection. Raises exception if connection fails."""
-    engine = await get_db_engine()
-    async with engine.connect() as conn:
-        await conn.execute(text("SELECT 1"))
-
-
-async def run_migrations():
-    """Run database migrations using Alembic."""
-    import asyncio
-
-    from alembic import command
-    from alembic.config import Config
-
-    # Get the path to alembic.ini (should be in project root)
-    project_root = Path(__file__).resolve().parents[2]
-    alembic_ini_path = project_root / "alembic.ini"
-
-    if not alembic_ini_path.exists():
-        raise FileNotFoundError(
-            f"Alembic configuration file not found at {alembic_ini_path}"
+            future=True,  # Use SQLAlchemy 2.0 style
         )
 
-    # Create Alembic config
-    alembic_cfg = Config(str(alembic_ini_path))
-
-    # Set the database URL dynamically
-    db_url = get_db_url()
-    alembic_cfg.set_main_option("sqlalchemy.url", db_url)
-
-    # Run migrations using command.upgrade
-    # This is synchronous but works correctly with async migrations
-    # because env.py handles async internally via asyncio.run
-    # We run it in a thread to avoid blocking the event loop
-    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
-
-
-async def init_db():
-    """Initialize database connection and run migrations. Exits application if connection fails."""
-    try:
-        # Run migrations first
-        await run_migrations()
-        # Then verify connection
-        await verify_db_connection()
-    except Exception as e:
-        print(f"Failed to initialize database: {e}", file=sys.stderr)
-        sys.exit(1)
-
-
-async def get_session() -> AsyncSession:
-    """Get database session."""
-    global _session_factory
-    if _session_factory is None:
-        engine = await get_db_engine()
-        _session_factory = async_sessionmaker(
-            engine, class_=AsyncSession, expire_on_commit=False
+        logger.info(
+            "Database engine initialized",
+            extra={
+                "host": settings.db_host,
+                "port": settings.db_port,
+                "database": settings.db_name,
+            },
         )
-    return _session_factory()
+
+        return self._engine
+
+    def init_session_factory(self) -> async_sessionmaker[AsyncSession]:
+        """Initialize and return session factory.
+
+        Creates session factory only once and reuses it.
+        Sessions created by this factory are properly configured.
+        """
+        if self._session_factory is not None:
+            return self._session_factory
+
+        engine = self.init_engine()
+
+        self._session_factory = async_sessionmaker(
+            bind=engine,
+            class_=AsyncSession,
+            expire_on_commit=False,  # Don't expire objects after commit
+            autoflush=False,  # Manual flush control
+            autocommit=False,  # Manual commit control
+        )
+
+        logger.info("Database session factory initialized")
+
+        return self._session_factory
+
+    async def verify_connection(self) -> bool:
+        """Verify database connection is working.
+
+        Returns:
+            True if connection is successful, False otherwise.
+
+        Raises:
+            Exception: If connection fails with detailed error.
+        """
+        try:
+            engine = self.init_engine()
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            logger.info("Database connection verified successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Database connection verification failed: {e}")
+            raise
+
+    async def close(self) -> None:
+        """Close database engine and clean up connections.
+
+        Should be called during application shutdown.
+        """
+        if self._engine is not None:
+            await self._engine.dispose()
+            logger.info("Database engine disposed")
+            self._engine = None
+            self._session_factory = None
+
+    @property
+    def engine(self) -> AsyncEngine:
+        """Get engine instance, initializing if needed."""
+        return self.init_engine()
+
+    @property
+    def session_factory(self) -> async_sessionmaker[AsyncSession]:
+        """Get session factory, initializing if needed."""
+        return self.init_session_factory()
 
 
-async def close_db():
-    """Close database connections."""
-    global _engine
-    if _engine:
-        await _engine.dispose()
-        _engine = None
+# Global database manager instance
+db_manager = DatabaseManager()
+
+
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency for database sessions.
+
+    Provides properly configured database session with automatic
+    transaction management and cleanup.
+
+    Usage:
+        @app.get("/users")
+        async def get_users(db: AsyncSession = Depends(get_db_session)):
+            users = await User.get_all(db)
+            return users
+
+    Yields:
+        AsyncSession: Database session with automatic cleanup.
+    """
+    session_factory = db_manager.init_session_factory()
+
+    async with session_factory() as session:
+        try:
+            yield session
+            await session.commit()  # Auto-commit on success
+        except Exception:
+            await session.rollback()  # Auto-rollback on error
+            raise
+        finally:
+            await session.close()
+
+
+async def init_db() -> None:
+    """Initialize database connection.
+
+    Verifies that database connection works properly.
+    Does NOT run migrations automatically - migrations should be run
+    explicitly via alembic CLI in production.
+
+    Raises:
+        Exception: If database connection fails.
+    """
+    logger.info("Initializing database connection...")
+    await db_manager.verify_connection()
+    logger.info("Database initialized successfully")
+
+
+async def close_db() -> None:
+    """Close database connections.
+
+    Should be called during application shutdown.
+    """
+    logger.info("Closing database connections...")
+    await db_manager.close()
+    logger.info("Database connections closed")

@@ -19,4 +19,6 @@ class TestApplication:
         """Проверяем, что health endpoint работает."""
         response = client.get("/health")
         assert response.status_code == 200
-        assert response.json() == {"status": "healthy"}
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert "service" in data
