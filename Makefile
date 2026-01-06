@@ -1,4 +1,4 @@
-.PHONY: clean format db-up db-down db-restart db-logs
+.PHONY: clean format db-up db-down db-restart db-logs test test-setup test-unit test-cov
 
 clean:
 	@bash scripts/clean.sh
@@ -28,4 +28,20 @@ db-restart:
 
 db-logs:
 	@docker-compose logs -f postgres
+
+test-setup:
+	@echo "Setting up test database..."
+	@bash scripts/setup_test_db.sh
+
+test: test-setup
+	@echo "Running all tests..."
+	@pytest tests/ -v
+
+test-unit:
+	@echo "Running unit tests..."
+	@pytest tests/unit/ -v
+
+test-cov:
+	@echo "Running tests with coverage..."
+	@pytest tests/ --cov=app --cov-report=html --cov-report=xml --cov-report=term
 

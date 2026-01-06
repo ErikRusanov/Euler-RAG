@@ -6,9 +6,12 @@ from typing import AsyncGenerator, Generator
 import pytest
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.application import create_app
 from app.config import Settings
+from app.utils.db import Base
 
 
 @pytest.fixture(scope="session")
@@ -20,14 +23,50 @@ def test_settings() -> Settings:
     os.environ.setdefault("DEBUG", "True")
     os.environ.setdefault("HOST", "127.0.0.1")
     os.environ.setdefault("PORT", "8000")
-    # Database settings for tests
+    # Database settings for tests - use test database
     os.environ.setdefault("DB_HOST", "localhost")
     os.environ.setdefault("DB_PORT", "5432")
-    os.environ.setdefault("DB_USER", "test_user")
-    os.environ.setdefault("DB_PASSWORD", "test_password")
-    os.environ.setdefault("DB_NAME", "test_db")
+    os.environ.setdefault("DB_USER", "postgres")
+    os.environ.setdefault("DB_PASSWORD", "postgres")
+    os.environ.setdefault("DB_NAME", "euler_rag_test")
 
     return Settings()
+
+
+@pytest.fixture(scope="function")
+async def db_session(test_settings: Settings) -> AsyncGenerator[AsyncSession, None]:
+    """Create database session for testing with automatic cleanup."""
+    # Build test database URL
+    db_url = (
+        f"postgresql+asyncpg://{test_settings.DB_USER}:{test_settings.DB_PASSWORD}"
+        f"@{test_settings.DB_HOST}:{test_settings.DB_PORT}/{test_settings.DB_NAME}"
+    )
+
+    # Create engine
+    engine = create_async_engine(db_url, echo=False, future=True)
+
+    # Create all tables if needed
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    # Create session factory
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    # Provide session
+    async with session_factory() as session:
+        yield session
+
+    # Clean up tables after each test to ensure isolation
+    async with engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(
+                text(f"TRUNCATE TABLE {table.name} RESTART IDENTITY CASCADE")
+            )
+
+    # Dispose engine
+    await engine.dispose()
 
 
 @pytest.fixture

@@ -51,6 +51,38 @@ docker-compose down         # Stop services
 docker-compose logs -f      # View logs
 ```
 
+## Testing
+
+The project uses PostgreSQL for both development and testing to ensure consistency.
+
+### Setup Test Database
+
+Before running tests, setup the test database:
+
+```bash
+make test-setup
+```
+
+This will:
+- Start PostgreSQL via docker-compose if not running
+- Create `euler_rag_test` database
+
+### Running Tests
+
+```bash
+make test           # Run all tests with test database setup
+make test-unit      # Run only unit tests
+make test-cov       # Run tests with coverage report
+```
+
+Or use pytest directly:
+
+```bash
+pytest tests/unit/models/test_base.py -v      # Run specific test file
+pytest tests/ -v                               # Run all tests
+pytest tests/ -v -k "test_create"             # Run tests matching pattern
+```
+
 ## Documentation
 
 ### Project Architecture

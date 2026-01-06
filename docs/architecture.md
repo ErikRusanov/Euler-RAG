@@ -151,7 +151,7 @@ erDiagram
     subjects {
         uuid id PK
         varchar name
-        int course
+        int semester
         timestamp created_at
     }
 
