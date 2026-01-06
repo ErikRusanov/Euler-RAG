@@ -8,6 +8,7 @@ from app.models.exceptions import (
     RecordNotFoundError,
 )
 from app.models.subject import Subject
+from app.models.teacher import Teacher
 
 __all__ = [
     "BaseModel",
@@ -16,4 +17,5 @@ __all__ = [
     "DatabaseConnectionError",
     "InvalidFilterError",
     "Subject",
+    "Teacher",
 ]
