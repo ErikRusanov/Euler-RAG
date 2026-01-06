@@ -7,6 +7,7 @@ from app.models.exceptions import (
     ModelError,
     RecordNotFoundError,
 )
+from app.models.subject import Subject
 
 __all__ = [
     "BaseModel",
@@ -14,4 +15,5 @@ __all__ = [
     "RecordNotFoundError",
     "DatabaseConnectionError",
     "InvalidFilterError",
+    "Subject",
 ]
