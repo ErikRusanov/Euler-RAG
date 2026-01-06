@@ -1,0 +1,412 @@
+# Senior Production-Ready Code Guidelines
+
+## Core Principles
+
+1. **Clean Architecture**: Follow SOLID principles, separation of concerns, and dependency injection
+2. **Type Safety**: Use type hints everywhere, leverage Pydantic for validation
+3. **Error Handling**: Implement comprehensive error handling with custom exceptions
+4. **Testing**: Write tests first, aim for 80%+ coverage
+5. **Documentation**: Write clear docstrings, comments for complex logic only
+6. **Security**: Never hardcode secrets, validate all inputs, use parameterized queries
+7. **Performance**: Consider scalability, use async where appropriate, implement caching
+
+## Python Code Standards
+
+### Style & Formatting
+- Use Black (line length: 88)
+- Sort imports with isort (black profile)
+- Follow PEP 8, PEP 484 (type hints), PEP 257 (docstrings)
+- Use descriptive variable names (no single letters except in comprehensions)
+- Max function length: 50 lines (refactor if longer)
+- Max cyclomatic complexity: 10
+
+### Type Hints
+```python
+# ✅ Good
+def get_user(db: AsyncSession, user_id: int) -> Optional[User]:
+    """Get user by ID from database."""
+    return await User.get_by_id(db, user_id)
+
+# ❌ Bad
+def get_user(db, user_id):
+    return await User.get_by_id(db, user_id)
+```
+
+### Error Handling
+```python
+# ✅ Good - Custom exceptions, proper logging
+class UserNotFoundError(AppError):
+    """Raised when user is not found."""
+    pass
+
+async def get_user_or_fail(user_id: int) -> User:
+    try:
+        user = await User.get_by_id(db, user_id)
+        if not user:
+            raise UserNotFoundError(f"User {user_id} not found")
+        return user
+    except DBAPIError as e:
+        logger.error(f"Database error: {e}")
+        raise DatabaseError("Failed to fetch user") from e
+
+# ❌ Bad - Generic exceptions, no logging
+async def get_user_or_fail(user_id: int):
+    user = await User.get_by_id(db, user_id)
+    if not user:
+        raise Exception("Not found")
+    return user
+```
+
+### Async/Await
+```python
+# ✅ Good - Proper async context managers
+async def process_users(db: AsyncSession) -> List[User]:
+    async with db.begin():
+        users = await User.get_all(db)
+        for user in users:
+            await user.update(db, processed=True)
+    return users
+
+# ❌ Bad - Blocking operations in async
+async def process_users(db):
+    users = User.get_all(db)  # Missing await
+    time.sleep(1)  # Blocking! Use asyncio.sleep()
+    return users
+```
+
+## FastAPI Specific
+
+### Dependency Injection
+```python
+# ✅ Good
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+@router.get("/users/{user_id}")
+async def get_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db_session),
+) -> UserResponse:
+    user = await User.get_by_id_or_fail(db, user_id)
+    return UserResponse.from_orm(user)
+
+# ❌ Bad - Global database connection
+@router.get("/users/{user_id}")
+async def get_user(user_id: int):
+    user = await User.get_by_id(db_global, user_id)
+    return user
+```
+
+### Request/Response Models
+```python
+# ✅ Good - Pydantic schemas for validation
+from pydantic import BaseModel, Field, field_validator
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    age: int = Field(ge=0, le=150)
+
+    @field_validator('email')
+    @classmethod
+    def email_must_be_lowercase(cls, v: str) -> str:
+        return v.lower()
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+# ❌ Bad - Raw dicts, no validation
+@router.post("/users")
+async def create_user(data: dict):
+    user = User(**data)
+    return user.to_dict()
+```
+
+### Exception Handlers
+```python
+# ✅ Good - Centralized exception handling
+@app.exception_handler(UserNotFoundError)
+async def user_not_found_handler(request: Request, exc: UserNotFoundError):
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"error": "User not found", "detail": str(exc)}
+    )
+
+# ❌ Bad - Try-catch in every endpoint
+@router.get("/users/{user_id}")
+async def get_user(user_id: int):
+    try:
+        return await User.get_by_id(db, user_id)
+    except Exception as e:
+        return {"error": str(e)}
+```
+
+## Database & SQLAlchemy
+
+### Models
+```python
+# ✅ Good - Modern SQLAlchemy 2.0 style
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from datetime import datetime
+
+class Base(DeclarativeBase):
+    pass
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"User(id={self.id}, email={self.email})"
+
+# ❌ Bad - Old style, no type hints
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+    email = Column(String)
+```
+
+### Queries
+```python
+# ✅ Good - Type-safe queries, explicit session
+async def get_active_users(
+    db: AsyncSession,
+    limit: int = 100
+) -> List[User]:
+    stmt = select(User).where(User.is_active == True).limit(limit)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+# ❌ Bad - Raw SQL, SQL injection risk
+async def get_active_users(db, limit):
+    query = f"SELECT * FROM users WHERE is_active = true LIMIT {limit}"
+    result = await db.execute(query)
+    return result.fetchall()
+```
+
+### Transactions
+```python
+# ✅ Good - Explicit transaction management
+async def transfer_money(
+    db: AsyncSession,
+    from_id: int,
+    to_id: int,
+    amount: Decimal
+) -> None:
+    async with db.begin():
+        from_account = await Account.get_by_id_or_fail(db, from_id)
+        to_account = await Account.get_by_id_or_fail(db, to_id)
+
+        if from_account.balance < amount:
+            raise InsufficientFundsError()
+
+        await from_account.update(db, balance=from_account.balance - amount)
+        await to_account.update(db, balance=to_account.balance + amount)
+
+# ❌ Bad - No transaction, race condition possible
+async def transfer_money(db, from_id, to_id, amount):
+    from_acc = await Account.get_by_id(db, from_id)
+    from_acc.balance -= amount
+    await db.commit()
+
+    to_acc = await Account.get_by_id(db, to_id)
+    to_acc.balance += amount
+    await db.commit()
+```
+
+## Configuration
+
+### Settings
+```python
+# ✅ Good - Pydantic Settings with validation
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+    )
+
+    database_url: str = Field(..., description="Database connection URL")
+    secret_key: str = Field(min_length=32)
+    environment: Literal["dev", "staging", "prod"] = "dev"
+
+    @field_validator("database_url")
+    @classmethod
+    def validate_db_url(cls, v: str) -> str:
+        if not v.startswith("postgresql"):
+            raise ValueError("Only PostgreSQL supported")
+        return v
+
+# ❌ Bad - Manual env parsing, no validation
+class Settings:
+    def __init__(self):
+        self.database_url = os.getenv("DATABASE_URL")
+        self.secret_key = os.getenv("SECRET_KEY", "dev")
+```
+
+## Testing
+
+### Unit Tests
+```python
+# ✅ Good - Isolated, fast, descriptive
+@pytest.mark.asyncio
+async def test_create_user_success(db_session: AsyncSession):
+    """Test: User creation should set timestamps automatically."""
+    # Arrange
+    user_data = {"email": "test@example.com", "age": 25}
+
+    # Act
+    user = await User.create(db_session, **user_data)
+    await db_session.commit()
+
+    # Assert
+    assert user.id is not None
+    assert user.email == "test@example.com"
+    assert user.created_at is not None
+    assert user.updated_at is not None
+
+# ❌ Bad - No description, unclear purpose
+async def test_user(db):
+    user = await User.create(db, email="test@test.com")
+    assert user
+```
+
+### Integration Tests
+```python
+# ✅ Good - Real API calls, full flow
+@pytest.mark.asyncio
+async def test_user_registration_flow(async_client: AsyncClient):
+    """Test: Complete user registration flow from API to database."""
+    # Arrange
+    payload = {"email": "new@example.com", "password": "SecurePass123!"}
+
+    # Act
+    response = await async_client.post("/api/v1/users", json=payload)
+
+    # Assert
+    assert response.status_code == 201
+    data = response.json()
+    assert "id" in data
+    assert data["email"] == "new@example.com"
+    assert "password" not in data  # Password should not be returned
+
+# ❌ Bad - Mocking everything, not testing real integration
+async def test_registration(mock_db, mock_email):
+    with patch("app.db.create_user") as mock:
+        mock.return_value = {"id": 1}
+        result = await register_user({})
+        assert result["id"] == 1
+```
+
+## Security Best Practices
+
+### Never Do This ❌
+```python
+# SQL Injection vulnerability
+query = f"SELECT * FROM users WHERE email = '{email}'"
+
+# Hardcoded secrets
+SECRET_KEY = "my-secret-key-12345"
+DATABASE_URL = "postgresql://user:password@localhost/db"
+
+# Exposing sensitive data
+@router.get("/users/{user_id}")
+async def get_user(user_id: int):
+    user = await User.get_by_id(db, user_id)
+    return user  # Returns password hash, tokens, etc.
+
+# No input validation
+@router.post("/users")
+async def create_user(data: dict):
+    return await User.create(db, **data)
+```
+
+### Always Do This ✅
+```python
+# Parameterized queries
+stmt = select(User).where(User.email == email)
+
+# Environment variables
+secret_key: str = Field(..., description="Secret from env")
+
+# Response schemas filter data
+@router.get("/users/{user_id}", response_model=UserPublic)
+async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
+    return await User.get_by_id_or_fail(db, user_id)
+
+# Pydantic validation
+@router.post("/users", response_model=UserResponse)
+async def create_user(data: UserCreate, db: AsyncSession = Depends(get_db)):
+    return await User.create(db, **data.model_dump())
+```
+
+## Logging
+
+### Structured Logging
+```python
+# ✅ Good - Structured, contextual logging
+logger.info(
+    "User created successfully",
+    extra={
+        "user_id": user.id,
+        "email": user.email,
+        "ip_address": request.client.host,
+    }
+)
+
+logger.error(
+    "Database operation failed",
+    extra={"operation": "user_create", "error": str(e)},
+    exc_info=True
+)
+
+# ❌ Bad - Unstructured, hard to parse
+logger.info(f"User {user.id} created")
+print(f"Error: {e}")
+```
+
+## Anti-Patterns to Avoid
+
+1. **God Objects**: Classes/functions doing too much
+2. **Global State**: Using global variables for configuration/connections
+3. **Tight Coupling**: Direct imports instead of dependency injection
+4. **Magic Numbers**: Use named constants
+5. **Silent Failures**: Always log errors, never use bare `except:`
+6. **Premature Optimization**: Profile first, then optimize
+7. **Not Using Async Properly**: Mixing sync/async code incorrectly
+8. **Ignoring Migrations**: Always version database schema changes
+9. **No Timeouts**: Add timeouts to all external calls
+10. **Trusting User Input**: Always validate and sanitize
+
+## Code Review Checklist
+
+Before submitting code, verify:
+- [ ] All functions have type hints and docstrings
+- [ ] No hardcoded values (use config/constants)
+- [ ] Error handling implemented for all external calls
+- [ ] Tests written and passing (unit + integration)
+- [ ] No security vulnerabilities (secrets, SQL injection, XSS)
+- [ ] Logging added for important operations
+- [ ] Performance considered (N+1 queries, caching)
+- [ ] Database migrations created if schema changed
+- [ ] API documented (OpenAPI/Swagger)
+- [ ] Code formatted (black, isort) and linted (flake8)
+
+## References
+
+- [PEP 8](https://pep8.org/) - Python Style Guide
+- [FastAPI Best Practices](https://fastapi.tiangolo.com/tutorial/)
+- [SQLAlchemy 2.0 Documentation](https://docs.sqlalchemy.org/en/20/)
+- [Pydantic Documentation](https://docs.pydantic.dev/)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
