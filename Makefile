@@ -1,4 +1,4 @@
-.PHONY: clean format db-up db-down db-restart db-logs
+.PHONY: clean format db-up db-down db-restart db-logs run dev run-prod
 
 clean:
 	@bash scripts/clean.sh
@@ -44,3 +44,11 @@ test-unit:
 test-cov:
 	@echo "Running tests with coverage..."
 	@pytest tests/ --cov=app --cov-report=html --cov-report=xml --cov-report=term
+
+run: db-up
+	@echo "Starting application..."
+	@python -m app.main
+
+run-prod:
+	@echo "Starting application in production mode..."
+	@uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --log-level warning
