@@ -8,6 +8,7 @@ from app.models.exceptions import (
     ModelError,
     RecordNotFoundError,
 )
+from app.models.solve_request import SolveRequest, SolveRequestStatus
 from app.models.subject import Subject
 from app.models.teacher import Teacher
 
@@ -21,4 +22,6 @@ __all__ = [
     "Teacher",
     "Document",
     "DocumentStatus",
+    "SolveRequest",
+    "SolveRequestStatus",
 ]
