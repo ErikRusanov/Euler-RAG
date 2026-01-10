@@ -28,3 +28,14 @@ class S3ConnectionError(Exception):
 
 class S3OperationError(Exception):
     """Raised when S3 operation fails."""
+
+
+class InvalidFileTypeError(Exception):
+    """Raised when uploaded file type is not allowed."""
+
+    def __init__(self, allowed_types: list[str], received_type: str):
+        self.allowed_types = allowed_types
+        self.received_type = received_type
+        super().__init__(
+            f"Invalid file type '{received_type}'. Allowed: {', '.join(allowed_types)}"
+        )

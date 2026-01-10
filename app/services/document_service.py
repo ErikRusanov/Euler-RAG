@@ -5,8 +5,18 @@ All filtering by status, subject_id, teacher_id is handled through inherited
 find() method.
 """
 
+import logging
+from typing import BinaryIO
+
 from app.models.document import Document
+from app.models.exceptions import InvalidFileTypeError
 from app.services.base import BaseService
+from app.utils.s3 import S3Storage
+
+logger = logging.getLogger(__name__)
+
+ALLOWED_CONTENT_TYPES = ["application/pdf"]
+PDF_FOLDER = "pdf"
 
 
 class DocumentService(BaseService[Document]):
@@ -25,25 +35,11 @@ class DocumentService(BaseService[Document]):
     Usage:
         service = DocumentService(db_session)
 
-        # Create
-        document = await service.create(
-            subject_id=1,
-            teacher_id=2,
-            filename="lecture.pdf",
-            s3_key="documents/lecture.pdf",
-            status=DocumentStatus.UPLOADED
-        )
+        # Upload PDF
+        document = await service.upload_pdf(s3, file, "lecture.pdf", "application/pdf")
 
         # Find by filters
         ready_docs = await service.find(status=DocumentStatus.READY)
-        subject_docs = await service.find(subject_id=1)
-
-        # Update with progress
-        updated = await service.update(
-            document.id,
-            status=DocumentStatus.PROCESSING,
-            progress={"pages": 10, "total": 50}
-        )
 
     Attributes:
         model: Document model class
@@ -51,3 +47,42 @@ class DocumentService(BaseService[Document]):
     """
 
     model = Document
+
+    async def upload_pdf(
+        self,
+        s3: S3Storage,
+        file_data: BinaryIO,
+        filename: str,
+        content_type: str,
+    ) -> Document:
+        """Upload PDF file to S3 and create document record.
+
+        Args:
+            s3: S3 storage instance.
+            file_data: File binary data.
+            filename: Original filename.
+            content_type: File MIME type.
+
+        Returns:
+            Created Document instance.
+
+        Raises:
+            InvalidFileTypeError: If file is not a PDF.
+            S3OperationError: If S3 upload fails.
+            DatabaseConnectionError: If database operation fails.
+        """
+        if content_type not in ALLOWED_CONTENT_TYPES:
+            logger.warning(
+                "Invalid file type upload attempt",
+                extra={"content_type": content_type, "original_filename": filename},
+            )
+            raise InvalidFileTypeError(ALLOWED_CONTENT_TYPES, content_type)
+
+        s3_key = s3.upload_file(file_data, filename, folder=PDF_FOLDER)
+        document = await self.create(filename=filename, s3_key=s3_key)
+
+        logger.info(
+            "Document uploaded successfully",
+            extra={"document_id": document.id, "s3_key": s3_key},
+        )
+        return document

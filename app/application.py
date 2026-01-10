@@ -15,8 +15,10 @@ from app.config import get_settings
 from app.middleware import APIKeyMiddleware
 from app.models.exceptions import (
     DatabaseConnectionError,
+    InvalidFileTypeError,
     ModelError,
     RecordNotFoundError,
+    S3OperationError,
 )
 from app.utils.db import close_db, db_manager, init_db
 from app.utils.s3 import close_s3, init_s3
@@ -192,6 +194,36 @@ def setup_exception_handlers(app: FastAPI) -> None:
             content={
                 "error": "Bad Request",
                 "message": str(exc),
+            },
+        )
+
+    @app.exception_handler(InvalidFileTypeError)
+    async def invalid_file_type_handler(
+        request: Request, exc: InvalidFileTypeError
+    ) -> JSONResponse:
+        """Handle InvalidFileTypeError exceptions."""
+        logger.warning(f"Invalid file type: {exc}")
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "error": "Invalid File Type",
+                "message": str(exc),
+                "allowed_types": exc.allowed_types,
+                "received_type": exc.received_type,
+            },
+        )
+
+    @app.exception_handler(S3OperationError)
+    async def s3_operation_handler(
+        request: Request, exc: S3OperationError
+    ) -> JSONResponse:
+        """Handle S3OperationError exceptions."""
+        logger.error(f"S3 operation failed: {exc}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "error": "Storage Error",
+                "message": "Failed to process file in storage",
             },
         )
 
