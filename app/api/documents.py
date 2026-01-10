@@ -65,11 +65,12 @@ async def update_document(document_id: int) -> JSONResponse:
     )
 
 
-@router.delete("/{document_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-async def delete_document(document_id: int) -> JSONResponse:
-    """Delete document by ID (stub)."""
-    logger.info(f"DELETE /documents/{document_id} called (stub)")
-    return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content={"message": "Not yet implemented", "document_id": document_id},
-    )
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    s3: S3Storage = Depends(get_s3_storage),
+) -> None:
+    """Delete document and its file from storage."""
+    service = DocumentService(db)
+    await service.delete_with_file(s3, document_id)

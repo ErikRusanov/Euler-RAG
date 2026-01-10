@@ -86,3 +86,26 @@ class DocumentService(BaseService[Document]):
             extra={"document_id": document.id, "s3_key": s3_key},
         )
         return document
+
+    async def delete_with_file(self, s3: S3Storage, document_id: int) -> None:
+        """Delete document record and its file from S3.
+
+        Args:
+            s3: S3 storage instance.
+            document_id: Document ID to delete.
+
+        Raises:
+            RecordNotFoundError: If document not found.
+            S3OperationError: If S3 deletion fails.
+            DatabaseConnectionError: If database operation fails.
+        """
+        document = await self.get_by_id_or_fail(document_id)
+        s3_key = document.s3_key
+
+        s3.delete_file(s3_key)
+        await self.delete(document_id)
+
+        logger.info(
+            "Document deleted successfully",
+            extra={"document_id": document_id, "s3_key": s3_key},
+        )
