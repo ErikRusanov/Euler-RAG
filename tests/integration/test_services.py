@@ -7,7 +7,7 @@ All services inherit from BaseService, so testing one is sufficient.
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.exceptions import (
+from app.exceptions import (
     DatabaseConnectionError,
     InvalidFilterError,
     RecordNotFoundError,

@@ -6,8 +6,8 @@ Tests unique constraints and relationships that are specific to each model.
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions import DatabaseConnectionError
 from app.models.document import Document, DocumentStatus
-from app.models.exceptions import DatabaseConnectionError
 from app.models.solve_request import SolveRequest, SolveRequestStatus
 from app.models.subject import Subject
 from app.models.teacher import Teacher

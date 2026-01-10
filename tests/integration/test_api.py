@@ -32,7 +32,7 @@ class TestAPIKeyMiddleware:
         """Protected endpoints require API key."""
         client, _ = api_client
 
-        response = await client.post("/documents")
+        response = await client.get("/documents")
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.json()["error"] == "Unauthorized"
@@ -42,7 +42,7 @@ class TestAPIKeyMiddleware:
         """Protected endpoints reject invalid API key."""
         client, _ = api_client
 
-        response = await client.post("/documents", headers={"X-API-KEY": "invalid-key"})
+        response = await client.get("/documents", headers={"X-API-KEY": "invalid-key"})
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -51,7 +51,8 @@ class TestAPIKeyMiddleware:
         """Protected endpoints accept valid API key."""
         client, settings = api_client
 
-        response = await client.post(
+        # Use GET /documents (stub) to avoid S3 dependency
+        response = await client.get(
             "/documents", headers={"X-API-KEY": settings.api_key}
         )
 
@@ -62,7 +63,8 @@ class TestAPIKeyMiddleware:
         """API key header is case-insensitive."""
         client, settings = api_client
 
-        response = await client.post(
+        # Use GET /documents (stub) to avoid S3 dependency
+        response = await client.get(
             "/documents", headers={"x-api-key": settings.api_key}
         )
 
@@ -70,20 +72,7 @@ class TestAPIKeyMiddleware:
 
 
 class TestDocumentsAPI:
-    """Tests for documents API endpoints."""
-
-    @pytest.mark.asyncio
-    async def test_create_document_stub_response(self, api_client):
-        """POST /documents returns stub response."""
-        client, settings = api_client
-
-        response = await client.post(
-            "/documents", headers={"X-API-KEY": settings.api_key}
-        )
-
-        assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED
-        data = response.json()
-        assert "message" in data
+    """Tests for documents API endpoints (stubs only)."""
 
     @pytest.mark.asyncio
     async def test_list_documents_stub_response(self, api_client):
@@ -102,30 +91,6 @@ class TestDocumentsAPI:
         client, settings = api_client
 
         response = await client.get(
-            "/documents/123", headers={"X-API-KEY": settings.api_key}
-        )
-
-        assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED
-
-    @pytest.mark.asyncio
-    async def test_update_document_stub_response(self, api_client):
-        """PATCH /documents/{id} returns stub response with document_id."""
-        client, settings = api_client
-
-        response = await client.patch(
-            "/documents/123", headers={"X-API-KEY": settings.api_key}
-        )
-
-        assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED
-        data = response.json()
-        assert data["document_id"] == 123
-
-    @pytest.mark.asyncio
-    async def test_delete_document_stub_response(self, api_client):
-        """DELETE /documents/{id} returns stub response."""
-        client, settings = api_client
-
-        response = await client.delete(
             "/documents/123", headers={"X-API-KEY": settings.api_key}
         )
 

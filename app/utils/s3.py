@@ -9,7 +9,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from app.config import get_settings
-from app.models.exceptions import S3ConnectionError, S3OperationError
+from app.exceptions import S3ConnectionError, S3OperationError
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from botocore.exceptions import ClientError
 
-from app.models.exceptions import S3ConnectionError, S3OperationError
+from app.exceptions import S3ConnectionError, S3OperationError
 
 
 class TestS3Storage:

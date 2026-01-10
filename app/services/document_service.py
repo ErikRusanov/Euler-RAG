@@ -8,8 +8,8 @@ find() method.
 import logging
 from typing import Any, BinaryIO, Optional
 
+from app.exceptions import InvalidFileTypeError, RelatedRecordNotFoundError
 from app.models.document import Document
-from app.models.exceptions import InvalidFileTypeError, RelatedRecordNotFoundError
 from app.models.subject import Subject
 from app.models.teacher import Teacher
 from app.services.base import BaseService

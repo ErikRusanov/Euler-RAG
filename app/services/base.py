@@ -6,12 +6,12 @@ from typing import Any, Generic, List, Optional, TypeVar
 from sqlalchemy.exc import DBAPIError, IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.base import BaseModel
-from app.models.exceptions import (
+from app.exceptions import (
     DatabaseConnectionError,
     InvalidFilterError,
     RecordNotFoundError,
 )
+from app.models.base import BaseModel
 
 logger = logging.getLogger(__name__)
 
