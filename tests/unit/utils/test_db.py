@@ -1,4 +1,4 @@
-"""Tests for database connection and manager."""
+"""Unit tests for database connection manager."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,180 +8,162 @@ from sqlalchemy.exc import OperationalError
 from app.utils.db import DatabaseManager, db_manager, get_db_session, init_db
 
 
-@pytest.mark.asyncio
-async def test_database_manager_init_engine():
-    """Test that DatabaseManager.init_engine creates engine instance."""
-    manager = DatabaseManager()
-    engine = manager.init_engine()
+class TestDatabaseManager:
+    """Tests for DatabaseManager class."""
 
-    assert engine is not None
-    assert hasattr(engine, "connect")
-    assert manager._engine is engine  # Should be cached
+    @pytest.mark.asyncio
+    async def test_init_engine_creates_engine(self):
+        """init_engine creates engine instance."""
+        manager = DatabaseManager()
 
+        engine = manager.init_engine()
 
-@pytest.mark.asyncio
-async def test_database_manager_init_engine_caches():
-    """Test that DatabaseManager.init_engine caches engine instance."""
-    manager = DatabaseManager()
+        assert engine is not None
+        assert hasattr(engine, "connect")
+        assert manager._engine is engine
 
-    engine1 = manager.init_engine()
-    engine2 = manager.init_engine()
+    @pytest.mark.asyncio
+    async def test_init_engine_caches_instance(self):
+        """init_engine returns cached engine on subsequent calls."""
+        manager = DatabaseManager()
 
-    assert engine1 is engine2  # Same instance
+        engine1 = manager.init_engine()
+        engine2 = manager.init_engine()
 
+        assert engine1 is engine2
 
-@pytest.mark.asyncio
-async def test_database_manager_verify_connection_success(test_settings):
-    """Test that DatabaseManager.verify_connection works correctly."""
-    manager = DatabaseManager()
+    @pytest.mark.asyncio
+    async def test_verify_connection_success(self):
+        """verify_connection returns True on successful connection."""
+        manager = DatabaseManager()
 
-    # Mock the connection to avoid requiring actual database
-    with patch.object(manager, "init_engine") as mock_init:
-        mock_engine = MagicMock()
-        mock_conn = AsyncMock()
-        mock_conn.execute = AsyncMock()
+        with patch.object(manager, "init_engine") as mock_init:
+            mock_engine = MagicMock()
+            mock_conn = AsyncMock()
+            mock_conn.execute = AsyncMock()
+            mock_context = AsyncMock()
+            mock_context.__aenter__.return_value = mock_conn
+            mock_context.__aexit__.return_value = None
+            mock_engine.connect.return_value = mock_context
+            mock_init.return_value = mock_engine
 
-        mock_context = AsyncMock()
-        mock_context.__aenter__.return_value = mock_conn
-        mock_context.__aexit__.return_value = None
-        mock_engine.connect.return_value = mock_context
+            is_connected = await manager.verify_connection()
 
-        mock_init.return_value = mock_engine
+            assert is_connected is True
+            mock_conn.execute.assert_awaited_once()
 
-        is_connected = await manager.verify_connection()
-        assert is_connected is True
-        mock_conn.execute.assert_awaited_once()
+    @pytest.mark.asyncio
+    async def test_verify_connection_raises_on_failure(self):
+        """verify_connection raises on connection failure."""
+        manager = DatabaseManager()
 
+        with patch.object(manager, "init_engine") as mock_init:
+            mock_engine = MagicMock()
+            mock_context = AsyncMock()
+            mock_context.__aenter__.side_effect = OperationalError(
+                "connection failed", None, None
+            )
+            mock_engine.connect.return_value = mock_context
+            mock_init.return_value = mock_engine
 
-@pytest.mark.asyncio
-async def test_database_manager_verify_connection_failure():
-    """Test that DatabaseManager.verify_connection raises on failure."""
-    manager = DatabaseManager()
+            with pytest.raises(OperationalError):
+                await manager.verify_connection()
 
-    # Mock engine to raise error
-    with patch.object(manager, "init_engine") as mock_init:
-        mock_engine = MagicMock()
-        mock_context = AsyncMock()
-        mock_context.__aenter__.side_effect = OperationalError(
-            "connection failed", None, None
-        )
-        mock_engine.connect.return_value = mock_context
-        mock_init.return_value = mock_engine
+    @pytest.mark.asyncio
+    async def test_close_disposes_engine(self):
+        """close disposes engine and clears state."""
+        manager = DatabaseManager()
+        manager.init_engine()
 
-        with pytest.raises(OperationalError):
-            await manager.verify_connection()
+        await manager.close()
 
-
-@pytest.mark.asyncio
-async def test_database_manager_close():
-    """Test that DatabaseManager.close disposes engine."""
-    manager = DatabaseManager()
-
-    # Initialize engine
-    manager.init_engine()
-    assert manager._engine is not None
-
-    # Close manager
-    await manager.close()
-    assert manager._engine is None
-    assert manager._session_factory is None
+        assert manager._engine is None
+        assert manager._session_factory is None
 
 
-@pytest.mark.asyncio
-async def test_get_db_session_yields_session():
-    """Test that get_db_session yields working session."""
-    session_created = False
+class TestGetDbSession:
+    """Tests for get_db_session dependency."""
 
-    async for session in get_db_session():
-        session_created = True
-        assert session is not None
-        assert hasattr(session, "execute")
-        assert hasattr(session, "commit")
-        break
+    @pytest.mark.asyncio
+    async def test_yields_session(self):
+        """get_db_session yields working session."""
+        session_created = False
 
-    assert session_created is True
+        async for session in get_db_session():
+            session_created = True
+            assert session is not None
+            assert hasattr(session, "execute")
+            break
 
+        assert session_created is True
 
-@pytest.mark.asyncio
-async def test_get_db_session_commits_on_success():
-    """Test that get_db_session auto-commits on success."""
-
-    with patch("app.utils.db.db_manager.init_session_factory") as mock_factory:
+    @pytest.mark.asyncio
+    async def test_commits_on_success(self):
+        """get_db_session commits on successful completion."""
         mock_session = AsyncMock()
         mock_context = AsyncMock()
         mock_context.__aenter__.return_value = mock_session
         mock_context.__aexit__.return_value = None
+        mock_session_factory = MagicMock(return_value=mock_context)
 
-        mock_session_factory = MagicMock()
-        mock_session_factory.return_value = mock_context
-        mock_factory.return_value = mock_session_factory
+        with patch("app.utils.db.db_manager.init_session_factory") as mock_factory:
+            mock_factory.return_value = mock_session_factory
 
-        async for _ in get_db_session():
-            pass  # Normal execution
+            async for _ in get_db_session():
+                pass
 
-        # Should commit and close
-        mock_session.commit.assert_awaited_once()
-        mock_session.close.assert_awaited_once()
+            mock_session.commit.assert_awaited_once()
+            mock_session.close.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_rollbacks_on_error(self):
+        """get_db_session rolls back on error."""
+        mock_session = AsyncMock()
 
-@pytest.mark.asyncio
-async def test_get_db_session_rollbacks_on_error():
-    """Test that get_db_session auto-rollbacks on error."""
-    # Create mock session
-    mock_session = AsyncMock()
-    mock_session.commit = AsyncMock()
-    mock_session.rollback = AsyncMock()
-    mock_session.close = AsyncMock()
+        class MockSessionContext:
+            async def __aenter__(self):
+                return mock_session
 
-    # Create proper async context manager mock
-    class MockSessionContext:
-        async def __aenter__(self):
-            return mock_session
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return None
 
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
-            return None
+        mock_session_factory = MagicMock(return_value=MockSessionContext())
 
-    # Create mock session factory that returns our context manager
-    mock_session_factory = MagicMock(return_value=MockSessionContext())
+        with patch.object(
+            db_manager, "init_session_factory", return_value=mock_session_factory
+        ):
+            try:
+                gen = get_db_session()
+                await gen.__anext__()
+                await gen.athrow(ValueError("Test error"))
+            except (StopAsyncIteration, ValueError):
+                pass
 
-    with patch.object(
-        db_manager, "init_session_factory", return_value=mock_session_factory
-    ):
-        try:
-            gen = get_db_session()
-            await gen.__anext__()
-            # Simulate an error during request processing
-            await gen.athrow(ValueError("Test error"))
-        except (StopAsyncIteration, ValueError):
-            pass
-
-        # Should rollback (commit should not be called due to exception)
-        mock_session.rollback.assert_awaited_once()
-        mock_session.close.assert_awaited_once()
+            mock_session.rollback.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_init_db_success():
-    """Test that init_db initializes database successfully."""
-    with patch(
-        "app.utils.db.db_manager.verify_connection", new_callable=AsyncMock
-    ) as mock_verify:
-        mock_verify.return_value = True
+class TestInitDb:
+    """Tests for init_db function."""
 
-        # Should not raise exception
-        await init_db()
+    @pytest.mark.asyncio
+    async def test_success(self):
+        """init_db succeeds when connection is verified."""
+        with patch(
+            "app.utils.db.db_manager.verify_connection", new_callable=AsyncMock
+        ) as mock_verify:
+            mock_verify.return_value = True
 
-        mock_verify.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_init_db_raises_on_failure():
-    """Test that init_db raises exception on connection failure."""
-    with patch(
-        "app.utils.db.db_manager.verify_connection", new_callable=AsyncMock
-    ) as mock_verify:
-        mock_verify.side_effect = OperationalError("connection failed", None, None)
-
-        # Should raise exception (no longer calls sys.exit)
-        with pytest.raises(OperationalError):
             await init_db()
+
+            mock_verify.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_raises_on_failure(self):
+        """init_db raises on connection failure."""
+        with patch(
+            "app.utils.db.db_manager.verify_connection", new_callable=AsyncMock
+        ) as mock_verify:
+            mock_verify.side_effect = OperationalError("connection failed", None, None)
+
+            with pytest.raises(OperationalError):
+                await init_db()

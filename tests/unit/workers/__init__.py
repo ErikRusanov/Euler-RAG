@@ -1,1 +1,0 @@
-"""Workers unit tests package."""

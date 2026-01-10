@@ -2,42 +2,48 @@
 
 import os
 from collections.abc import AsyncGenerator
-from typing import Generator
+from typing import Generator, Optional
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from httpx import AsyncClient
-from sqlalchemy import text
+from sqlalchemy import String, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.application import create_app
 from app.config import Settings, get_settings
+from app.models.base import BaseModel
 from app.utils.db import Base
+from app.utils.s3 import S3Storage
+
+
+# Test model for integration tests (not prefixed with Test to avoid pytest collection)
+class IntegrationUser(BaseModel):
+    """Model for service integration tests."""
+
+    __tablename__ = "integration_users"
+
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    email: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
 
 
 @pytest.fixture(scope="session")
 def test_settings() -> Settings:
-    """Create test settings instance with test-specific configuration.
-
-    Returns:
-        Test settings instance with test database configuration.
-    """
-    # Load .env file if it exists to get DB_PASSWORD
+    """Create test settings with test database configuration."""
     from dotenv import load_dotenv
 
     load_dotenv()
 
-    # Override environment variables for testing
     os.environ["API_TITLE"] = "Euler RAG Test"
     os.environ["API_VERSION"] = "0.1.0-test"
     os.environ["DEBUG"] = "True"
     os.environ["ENVIRONMENT"] = "development"
     os.environ["HOST"] = "127.0.0.1"
     os.environ["PORT"] = "8000"
+    os.environ["LOG_LEVEL"] = "DEBUG"
+    os.environ["API_KEY"] = "test-api-key-for-testing"
 
-    # Database settings for tests - use test database
-    # Keep DB_HOST, DB_PORT, DB_USER, DB_PASSWORD from .env if set
     if "DB_HOST" not in os.environ:
         os.environ["DB_HOST"] = "localhost"
     if "DB_PORT" not in os.environ:
@@ -45,54 +51,37 @@ def test_settings() -> Settings:
     if "DB_USER" not in os.environ:
         os.environ["DB_USER"] = "postgres"
     if "DB_PASSWORD" not in os.environ:
-        # If no password in .env, try empty password
         os.environ["DB_PASSWORD"] = ""
 
-    # Always use test database name
     os.environ["DB_NAME"] = "euler_rag_test"
 
-    # Logging
-    os.environ["LOG_LEVEL"] = "DEBUG"
-
-    # Security - use test API key
-    os.environ["API_KEY"] = "test-api-key-for-testing"
-
-    # Clear the cache to force reload with test settings
     get_settings.cache_clear()
-
     return get_settings()
 
 
 @pytest.fixture
 def settings(test_settings: Settings) -> Settings:
-    """Provide test settings to individual tests.
-
-    Args:
-        test_settings: Session-scoped test settings.
-
-    Returns:
-        Test settings instance.
-    """
+    """Provide test settings to individual tests."""
     return test_settings
+
+
+# Tables created specifically for tests (will be dropped after session)
+TEST_ONLY_TABLES = [
+    "integration_users",
+    "test_users",  # Legacy from old tests
+    "test_service_users",  # Legacy from old tests
+]
 
 
 @pytest.fixture(scope="function")
 async def db_session(test_settings: Settings) -> AsyncGenerator[AsyncSession, None]:
     """Create database session for testing with automatic cleanup.
 
-    Each test gets a fresh session with all tables created.
-    After the test, all data is truncated to ensure test isolation.
-
-    Args:
-        test_settings: Test configuration settings.
-
-    Yields:
-        Database session for testing.
+    IMPORTANT: Tests run against euler_rag_test database (never production).
+    After each test, ALL tables are truncated to ensure isolation.
     """
-    # Build test database URL
     db_url = test_settings.database_url
 
-    # Create engine with test configuration
     engine = create_async_engine(
         db_url,
         echo=False,
@@ -100,11 +89,10 @@ async def db_session(test_settings: Settings) -> AsyncGenerator[AsyncSession, No
         pool_pre_ping=True,
     )
 
-    # Create all tables if needed
+    # Create all tables (application + test tables)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Create session factory
     session_factory = async_sessionmaker(
         engine,
         class_=AsyncSession,
@@ -113,38 +101,63 @@ async def db_session(test_settings: Settings) -> AsyncGenerator[AsyncSession, No
         autocommit=False,
     )
 
-    # Provide session
     async with session_factory() as session:
         yield session
-        # Rollback any uncommitted changes
         await session.rollback()
 
-    # Clean up tables after each test to ensure isolation
+    # Truncate ALL tables in test database to ensure test isolation
+    # This is safe because we always use euler_rag_test database
     async with engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(
                 text(f"TRUNCATE TABLE {table.name} RESTART IDENTITY CASCADE")
             )
 
-    # Dispose engine
     await engine.dispose()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_test_database(test_settings: Settings):
+    """Clean test database before and after test session.
+
+    - Before: Truncate all tables to ensure clean state
+    - After: Drop test-only tables
+    """
+    import asyncio
+
+    async def truncate_all_tables():
+        """Truncate all tables at session start."""
+        engine = create_async_engine(test_settings.database_url)
+        async with engine.begin() as conn:
+            # Create tables if they don't exist
+            await conn.run_sync(Base.metadata.create_all)
+            # Truncate all tables
+            for table in reversed(Base.metadata.sorted_tables):
+                await conn.execute(
+                    text(f"TRUNCATE TABLE {table.name} RESTART IDENTITY CASCADE")
+                )
+        await engine.dispose()
+
+    async def drop_test_tables():
+        """Drop test-only tables at session end."""
+        engine = create_async_engine(test_settings.database_url)
+        async with engine.begin() as conn:
+            for table_name in TEST_ONLY_TABLES:
+                await conn.execute(text(f"DROP TABLE IF EXISTS {table_name} CASCADE"))
+        await engine.dispose()
+
+    # Before tests: clean slate
+    asyncio.run(truncate_all_tables())
+
+    yield  # Run all tests
+
+    # After tests: drop test-only tables
+    asyncio.run(drop_test_tables())
 
 
 @pytest.fixture
 def app(test_settings: Settings) -> Generator:
-    """Create FastAPI application instance for testing.
-
-    The application is created with test settings and without
-    database initialization (handled separately in tests).
-
-    Args:
-        test_settings: Test configuration settings.
-
-    Yields:
-        FastAPI application instance.
-    """
-    # Mock init_db, close_db, init_s3, close_s3 to prevent actual connections
-    # during app creation
+    """Create FastAPI application instance for testing."""
     with patch("app.application.init_db", new_callable=AsyncMock) as mock_init_db:
         with patch("app.application.close_db", new_callable=AsyncMock) as mock_close_db:
             with patch("app.application.init_s3") as mock_init_s3:
@@ -154,33 +167,34 @@ def app(test_settings: Settings) -> Generator:
                     mock_init_s3.return_value = None
                     mock_close_s3.return_value = None
 
-                    app = create_app()
-                    yield app
+                    application = create_app()
+                    yield application
 
 
 @pytest.fixture
 def client(app) -> Generator[TestClient, None, None]:
-    """Create synchronous test client for FastAPI application.
-
-    Args:
-        app: FastAPI application instance.
-
-    Yields:
-        TestClient for making synchronous HTTP requests.
-    """
+    """Create synchronous test client for FastAPI application."""
     with TestClient(app) as test_client:
         yield test_client
 
 
 @pytest.fixture
-async def async_client(app) -> AsyncGenerator[AsyncClient, None]:
-    """Create async test client for FastAPI application.
+def s3_storage(test_settings: Settings) -> Optional[S3Storage]:
+    """Create S3 storage instance for integration tests.
 
-    Args:
-        app: FastAPI application instance.
-
-    Yields:
-        AsyncClient for making asynchronous HTTP requests.
+    Returns None if S3 credentials are not configured.
+    Tests using this fixture should skip if None is returned.
     """
-    async with AsyncClient(app=app, base_url="http://test") as async_test_client:
-        yield async_test_client
+    # Check if S3 credentials are configured
+    if not test_settings.s3_access_key_id or not test_settings.s3_secret_access_key:
+        return None
+
+    storage = S3Storage(
+        endpoint_url=test_settings.s3_endpoint_url,
+        access_key=test_settings.s3_access_key_id,
+        secret_key=test_settings.s3_secret_access_key,
+        bucket_name=test_settings.s3_bucket_name,
+        region=test_settings.s3_region,
+    )
+
+    return storage

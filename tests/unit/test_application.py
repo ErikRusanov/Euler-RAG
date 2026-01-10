@@ -1,24 +1,16 @@
-"""Tests for application factory and endpoints."""
-
-from fastapi.testclient import TestClient
+"""Unit tests for application factory."""
 
 from app.application import create_app
 
 
 class TestApplication:
-    """Тесты приложения - проверяем только поведение."""
+    """Tests for application creation."""
 
     def test_create_app_includes_routes(self):
-        """Проверяем, что роуты подключены."""
+        """Routes are registered correctly."""
         app = create_app()
         routes = [route.path for route in app.routes]
+
         assert "/" in routes
         assert "/health" in routes
-
-    def test_health_endpoint(self, client: TestClient):
-        """Проверяем, что health endpoint работает."""
-        response = client.get("/health")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "healthy"
-        assert "service" in data
+        assert "/documents" in routes
