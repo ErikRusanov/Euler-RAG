@@ -42,6 +42,7 @@ class S3Storage:
             region: AWS region.
         """
         self._bucket_name = bucket_name
+        self._endpoint_url = endpoint_url.rstrip("/")
         self._client = boto3.client(
             "s3",
             endpoint_url=endpoint_url,
@@ -130,8 +131,19 @@ class S3Storage:
             logger.error(f"Failed to upload file to S3: {e}")
             raise S3OperationError(f"Failed to upload file: {e}") from e
 
-    def get_file_url(self, key: str, expires_in: int = 3600) -> str:
-        """Get presigned URL for file.
+    def get_file_url(self, key: str) -> str:
+        """Get direct public URL for file.
+
+        Args:
+            key: S3 key of the file.
+
+        Returns:
+            Direct URL for file access.
+        """
+        return f"{self._endpoint_url}/{self._bucket_name}/{key}"
+
+    def get_presigned_url(self, key: str, expires_in: int = 3600) -> str:
+        """Get presigned URL for file with expiration.
 
         Args:
             key: S3 key of the file.

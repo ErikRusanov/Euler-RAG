@@ -27,12 +27,16 @@ async def create_document(
 ) -> DocumentResponse:
     """Upload a PDF document."""
     service = DocumentService(db)
-    return await service.upload_pdf(
+    document = await service.upload_pdf(
         s3=s3,
         file_data=file.file,
         filename=file.filename or "document.pdf",
         content_type=file.content_type or "",
     )
+
+    response = DocumentResponse.model_validate(document)
+    response.url = s3.get_file_url(document.s3_key)
+    return response
 
 
 @router.get("", status_code=status.HTTP_501_NOT_IMPLEMENTED)
@@ -45,14 +49,32 @@ async def list_documents() -> JSONResponse:
     )
 
 
-@router.get("/{document_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-async def get_document(document_id: int) -> JSONResponse:
-    """Get document by ID (stub)."""
-    logger.info(f"GET /documents/{document_id} called (stub)")
-    return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content={"message": "Not yet implemented", "document_id": document_id},
-    )
+@router.get("/{document_id}")
+async def get_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    s3: S3Storage = Depends(get_s3_storage),
+) -> DocumentResponse:
+    """Get document by ID.
+
+    Args:
+        document_id: Document ID to retrieve.
+        db: Database session.
+        s3: S3 storage instance.
+
+    Returns:
+        Document details with presigned download URL.
+
+    Raises:
+        RecordNotFoundError: If document with given ID does not exist.
+    """
+    service = DocumentService(db)
+    document = await service.get_by_id_or_fail(document_id)
+    url = s3.get_file_url(document.s3_key)
+
+    response = DocumentResponse.model_validate(document)
+    response.url = url
+    return response
 
 
 @router.patch("/{document_id}")

@@ -16,6 +16,13 @@ class DocumentResponse(BaseModel):
     s3_key: str
     status: DocumentStatus
     progress: dict[str, Any]
+    subject_id: Optional[int] = None
+    teacher_id: Optional[int] = None
+    error: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    processed_at: Optional[datetime] = None
+    url: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
