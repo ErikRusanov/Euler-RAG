@@ -60,12 +60,12 @@ class Document(BaseModel):
 
     __tablename__ = "documents"
 
-    # Foreign keys
-    subject_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("subjects.id"), nullable=False, index=True
+    # Foreign keys (nullable - can be assigned later)
+    subject_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("subjects.id"), nullable=True, index=True
     )
-    teacher_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("teachers.id"), nullable=False, index=True
+    teacher_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("teachers.id"), nullable=True, index=True
     )
 
     # Document metadata
@@ -79,10 +79,10 @@ class Document(BaseModel):
         Enum(DocumentStatus, native_enum=False, length=20),
         nullable=False,
         index=True,
-        default=DocumentStatus.PENDING,
+        default=DocumentStatus.UPLOADED,
     )
-    progress: Mapped[Optional[Dict[str, Any]]] = mapped_column(
-        JSONB, nullable=True, default=None
+    progress: Mapped[Dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default={"page": 0, "total": 0}
     )
 
     # Error tracking
