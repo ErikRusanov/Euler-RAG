@@ -18,6 +18,7 @@ from app.models.exceptions import (
     InvalidFileTypeError,
     ModelError,
     RecordNotFoundError,
+    RelatedRecordNotFoundError,
     S3OperationError,
 )
 from app.utils.db import close_db, db_manager, init_db
@@ -167,6 +168,22 @@ def setup_exception_handlers(app: FastAPI) -> None:
                 "error": "Not Found",
                 "message": str(exc),
                 "model": exc.model_name,
+                "record_id": exc.record_id,
+            },
+        )
+
+    @app.exception_handler(RelatedRecordNotFoundError)
+    async def related_record_not_found_handler(
+        request: Request, exc: RelatedRecordNotFoundError
+    ) -> JSONResponse:
+        """Handle RelatedRecordNotFoundError exceptions."""
+        logger.warning(f"Related record not found: {exc}")
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "error": "Bad Request",
+                "message": str(exc),
+                "field": exc.field,
                 "record_id": exc.record_id,
             },
         )

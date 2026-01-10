@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, UploadFile, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.document import DocumentResponse
+from app.schemas.document import DocumentResponse, DocumentUpdate
 from app.services.document_service import DocumentService
 from app.utils.db import get_db_session
 from app.utils.s3 import S3Storage, get_s3_storage
@@ -55,13 +55,16 @@ async def get_document(document_id: int) -> JSONResponse:
     )
 
 
-@router.patch("/{document_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-async def update_document(document_id: int) -> JSONResponse:
-    """Update document by ID (stub)."""
-    logger.info(f"PATCH /documents/{document_id} called (stub)")
-    return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content={"message": "Not yet implemented", "document_id": document_id},
+@router.patch("/{document_id}")
+async def update_document(
+    document_id: int,
+    data: DocumentUpdate,
+    db: AsyncSession = Depends(get_db_session),
+) -> DocumentResponse:
+    """Update document fields."""
+    service = DocumentService(db)
+    return await service.update_document(
+        document_id, **data.model_dump(exclude_unset=True)
     )
 
 

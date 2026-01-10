@@ -1,5 +1,5 @@
 """Pydantic schemas for API request/response models."""
 
-from app.schemas.document import DocumentResponse
+from app.schemas.document import DocumentResponse, DocumentUpdate
 
-__all__ = ["DocumentResponse"]
+__all__ = ["DocumentResponse", "DocumentUpdate"]

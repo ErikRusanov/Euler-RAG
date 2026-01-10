@@ -39,3 +39,12 @@ class InvalidFileTypeError(Exception):
         super().__init__(
             f"Invalid file type '{received_type}'. Allowed: {', '.join(allowed_types)}"
         )
+
+
+class RelatedRecordNotFoundError(ModelError):
+    """Raised when a related record (FK) is not found."""
+
+    def __init__(self, field: str, record_id: int):
+        self.field = field
+        self.record_id = record_id
+        super().__init__(f"Related record for '{field}' with id={record_id} not found")

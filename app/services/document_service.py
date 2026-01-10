@@ -6,10 +6,12 @@ find() method.
 """
 
 import logging
-from typing import BinaryIO
+from typing import Any, BinaryIO, Optional
 
 from app.models.document import Document
-from app.models.exceptions import InvalidFileTypeError
+from app.models.exceptions import InvalidFileTypeError, RelatedRecordNotFoundError
+from app.models.subject import Subject
+from app.models.teacher import Teacher
 from app.services.base import BaseService
 from app.utils.s3 import S3Storage
 
@@ -109,3 +111,40 @@ class DocumentService(BaseService[Document]):
             "Document deleted successfully",
             extra={"document_id": document_id, "s3_key": s3_key},
         )
+
+    async def update_document(
+        self,
+        document_id: int,
+        subject_id: Optional[int] = None,
+        teacher_id: Optional[int] = None,
+        **kwargs: Any,
+    ) -> Document:
+        """Update document with FK validation.
+
+        Args:
+            document_id: Document ID to update.
+            subject_id: Optional subject ID (validated if provided).
+            teacher_id: Optional teacher ID (validated if provided).
+            **kwargs: Other fields to update.
+
+        Returns:
+            Updated Document instance.
+
+        Raises:
+            RecordNotFoundError: If document not found.
+            RelatedRecordNotFoundError: If subject/teacher not found.
+            DatabaseConnectionError: If database operation fails.
+        """
+        if subject_id is not None:
+            subject = await Subject.get_by_id(self.db, subject_id)
+            if not subject:
+                raise RelatedRecordNotFoundError("subject_id", subject_id)
+            kwargs["subject_id"] = subject_id
+
+        if teacher_id is not None:
+            teacher = await Teacher.get_by_id(self.db, teacher_id)
+            if not teacher:
+                raise RelatedRecordNotFoundError("teacher_id", teacher_id)
+            kwargs["teacher_id"] = teacher_id
+
+        return await self.update(document_id, **kwargs)
