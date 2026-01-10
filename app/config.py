@@ -68,6 +68,28 @@ class Settings(BaseSettings):
         min_length=1,
     )
 
+    # S3 Storage Settings
+    s3_endpoint_url: str = Field(
+        default="http://localhost:9000",
+        description="S3-compatible storage endpoint URL",
+    )
+    s3_access_key_id: str = Field(
+        default="",
+        description="S3 access key ID",
+    )
+    s3_secret_access_key: str = Field(
+        default="",
+        description="S3 secret access key",
+    )
+    s3_bucket_name: str = Field(
+        default="euler-rag",
+        description="S3 bucket name",
+    )
+    s3_region: str = Field(
+        default="us-east-1",
+        description="S3 region",
+    )
+
     @field_validator("db_password")
     @classmethod
     def validate_db_password_in_production(cls, v: str, info) -> str:

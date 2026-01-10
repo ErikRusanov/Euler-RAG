@@ -143,15 +143,19 @@ def app(test_settings: Settings) -> Generator:
     Yields:
         FastAPI application instance.
     """
-    # Mock init_db and close_db to prevent actual database operations
+    # Mock init_db, close_db, init_s3, close_s3 to prevent actual connections
     # during app creation
-    with patch("app.application.init_db", new_callable=AsyncMock) as mock_init:
-        with patch("app.application.close_db", new_callable=AsyncMock) as mock_close:
-            mock_init.return_value = None
-            mock_close.return_value = None
+    with patch("app.application.init_db", new_callable=AsyncMock) as mock_init_db:
+        with patch("app.application.close_db", new_callable=AsyncMock) as mock_close_db:
+            with patch("app.application.init_s3") as mock_init_s3:
+                with patch("app.application.close_s3") as mock_close_s3:
+                    mock_init_db.return_value = None
+                    mock_close_db.return_value = None
+                    mock_init_s3.return_value = None
+                    mock_close_s3.return_value = None
 
-            app = create_app()
-            yield app
+                    app = create_app()
+                    yield app
 
 
 @pytest.fixture

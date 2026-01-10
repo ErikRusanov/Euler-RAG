@@ -19,6 +19,7 @@ from app.models.exceptions import (
     RecordNotFoundError,
 )
 from app.utils.db import close_db, db_manager, init_db
+from app.utils.s3 import close_s3, init_s3
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +243,7 @@ async def lifespan(app: FastAPI):
     # Startup
     try:
         await init_db()
+        init_s3()
         logger.info("Application startup complete")
     except Exception as e:
         logger.critical(f"Failed to start application: {e}")
@@ -251,6 +253,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down application...")
+    close_s3()
     await close_db()
     logger.info("Application shutdown complete")
 

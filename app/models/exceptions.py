@@ -20,3 +20,11 @@ class DatabaseConnectionError(ModelError):
 
 class InvalidFilterError(ModelError):
     """Raised when invalid filter is provided."""
+
+
+class S3ConnectionError(Exception):
+    """Raised when S3 connection fails."""
+
+
+class S3OperationError(Exception):
+    """Raised when S3 operation fails."""
