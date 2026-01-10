@@ -48,10 +48,18 @@ class TestSettings:
     def test_settings_environment_validation(self, monkeypatch):
         """Test that environment field accepts only valid values."""
         # Valid values
-        for env in ["development", "staging", "production"]:
+        for env in ["development", "staging"]:
             monkeypatch.setenv("ENVIRONMENT", env)
+            monkeypatch.setenv("API_KEY", "dev-key")
             settings = Settings()
             assert settings.environment == env
+
+        # Production requires longer API key
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("API_KEY", "production-api-key-with-32-chars-minimum-length")
+        monkeypatch.setenv("DB_PASSWORD", "secure-password")
+        settings = Settings()
+        assert settings.environment == "production"
 
         # Invalid value
         monkeypatch.setenv("ENVIRONMENT", "invalid")
@@ -86,6 +94,7 @@ class TestSettings:
         """Test that empty password is rejected in production."""
         monkeypatch.setenv("ENVIRONMENT", "production")
         monkeypatch.setenv("DB_PASSWORD", "")
+        monkeypatch.setenv("API_KEY", "production-api-key-with-32-chars-minimum-length")
 
         with pytest.raises(ValidationError) as exc_info:
             Settings()
@@ -96,6 +105,8 @@ class TestSettings:
     def test_settings_is_production_property(self, monkeypatch):
         """Test is_production property."""
         monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("API_KEY", "production-api-key-with-32-chars-minimum-length")
+        monkeypatch.setenv("DB_PASSWORD", "secure-password")
         settings = Settings()
         assert settings.is_production is True
         assert settings.is_development is False
@@ -117,14 +128,31 @@ class TestSettings:
         # Should be the same instance due to lru_cache
         assert settings1 is settings2
 
-    def test_settings_default_values(self):
+    def test_settings_default_values(self, monkeypatch):
         """Test that default values are applied correctly."""
-        # Clear all environment variables
+        # Disable .env file loading for this test
+        monkeypatch.setattr(
+            "app.config.Settings.model_config",
+            {
+                "env_file": None,
+                "env_file_encoding": "utf-8",
+                "case_sensitive": False,
+                "extra": "ignore",
+            },
+        )
+
+        # Set minimal required values
+        monkeypatch.setenv("API_KEY", "test-key")
+
+        # Clear environment variables to test defaults
         import os
 
         for key in list(os.environ.keys()):
-            if key.startswith(("API_", "DB_", "DEBUG", "HOST", "PORT", "LOG_")):
-                os.environ.pop(key, None)
+            if key.startswith(
+                ("API_", "DB_", "DEBUG", "HOST", "PORT", "LOG_", "ENVIRONMENT")
+            ):
+                if key != "API_KEY":
+                    monkeypatch.delenv(key, raising=False)
 
         settings = Settings()
 
@@ -136,3 +164,36 @@ class TestSettings:
         assert settings.port == 8000
         assert settings.db_host == "localhost"
         assert settings.db_port == 5432
+
+    def test_api_key_must_not_be_empty(self, monkeypatch):
+        """Test that API key must not be empty."""
+        monkeypatch.setenv("API_KEY", "")
+
+        with pytest.raises(ValidationError) as exc_info:
+            Settings()
+
+        errors = exc_info.value.errors()
+        assert any(error["loc"] == ("api_key",) for error in errors)
+
+    def test_api_key_length_validation_in_production(self, monkeypatch):
+        """Test that API key must be at least 32 characters in production."""
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("DB_PASSWORD", "secure-password")
+        monkeypatch.setenv("API_KEY", "short-key")  # Less than 32 characters
+
+        with pytest.raises(ValidationError) as exc_info:
+            Settings()
+
+        errors = exc_info.value.errors()
+        assert any(
+            "32 characters" in error["msg"] and error["loc"] == ("api_key",)
+            for error in errors
+        )
+
+    def test_api_key_length_validation_in_development(self, monkeypatch):
+        """Test that API key can be short in development."""
+        monkeypatch.setenv("ENVIRONMENT", "development")
+        monkeypatch.setenv("API_KEY", "short")
+
+        settings = Settings()
+        assert settings.api_key == "short"

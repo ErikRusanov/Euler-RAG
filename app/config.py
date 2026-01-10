@@ -61,6 +61,13 @@ class Settings(BaseSettings):
         default="INFO", description="Logging level"
     )
 
+    # Security Settings
+    api_key: str = Field(
+        default="",
+        description="API key for authentication",
+        min_length=1,
+    )
+
     @field_validator("db_password")
     @classmethod
     def validate_db_password_in_production(cls, v: str, info) -> str:
@@ -69,6 +76,17 @@ class Settings(BaseSettings):
         environment = info.data.get("environment", "development")
         if environment == "production" and not v:
             raise ValueError("Database password must be set in production")
+        return v
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, v: str, info) -> str:
+        """Ensure API key is set and secure."""
+        environment = info.data.get("environment", "development")
+        if not v:
+            raise ValueError("API key must be set")
+        if environment == "production" and len(v) < 32:
+            raise ValueError("API key must be at least 32 characters in production")
         return v
 
     @property

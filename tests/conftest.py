@@ -54,10 +54,26 @@ def test_settings() -> Settings:
     # Logging
     os.environ["LOG_LEVEL"] = "DEBUG"
 
+    # Security - use test API key
+    os.environ["API_KEY"] = "test-api-key-for-testing"
+
     # Clear the cache to force reload with test settings
     get_settings.cache_clear()
 
     return get_settings()
+
+
+@pytest.fixture
+def settings(test_settings: Settings) -> Settings:
+    """Provide test settings to individual tests.
+
+    Args:
+        test_settings: Session-scoped test settings.
+
+    Returns:
+        Test settings instance.
+    """
+    return test_settings
 
 
 @pytest.fixture(scope="function")
@@ -127,7 +143,8 @@ def app(test_settings: Settings) -> Generator:
     Yields:
         FastAPI application instance.
     """
-    # Mock init_db and close_db to prevent actual database operations during app creation
+    # Mock init_db and close_db to prevent actual database operations
+    # during app creation
     with patch("app.application.init_db", new_callable=AsyncMock) as mock_init:
         with patch("app.application.close_db", new_callable=AsyncMock) as mock_close:
             mock_init.return_value = None

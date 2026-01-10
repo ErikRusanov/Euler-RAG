@@ -29,7 +29,7 @@ db-restart:
 db-logs:
 	@docker-compose logs -f postgres
 
-test: test-setup
+test:
 	@echo "Setting up test database..."
 	@bash scripts/setup_test_db.sh
 	@echo "Running all tests..."

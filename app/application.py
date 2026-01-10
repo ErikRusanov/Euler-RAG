@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
+from app.middleware import APIKeyMiddleware
 from app.models.exceptions import (
     DatabaseConnectionError,
     ModelError,
@@ -27,6 +28,8 @@ def create_router() -> APIRouter:
     Returns:
         Configured APIRouter instance.
     """
+    from app.api.documents import router as documents_router
+
     router = APIRouter()
 
     @router.get("/", tags=["General"])
@@ -68,6 +71,9 @@ def create_router() -> APIRouter:
                 },
             )
 
+    # Include API routers
+    router.include_router(documents_router)
+
     return router
 
 
@@ -78,6 +84,9 @@ def setup_middleware(app: FastAPI) -> None:
         app: FastAPI application instance.
     """
     settings = get_settings()
+
+    # API Key authentication middleware
+    app.add_middleware(APIKeyMiddleware)
 
     # CORS middleware
     if settings.is_development:
@@ -255,7 +264,10 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title=settings.api_title,
-        description="RAG service for solving mathematical problems using subject-specific notations and conventions",
+        description=(
+            "RAG service for solving mathematical problems using "
+            "subject-specific notations and conventions"
+        ),
         version=settings.api_version,
         debug=settings.debug,
         lifespan=lifespan,
