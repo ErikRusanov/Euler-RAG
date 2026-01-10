@@ -8,6 +8,7 @@ from typing import Callable
 from fastapi import APIRouter, FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
@@ -274,7 +275,44 @@ def create_app() -> FastAPI:
         docs_url="/docs" if settings.is_development else None,
         redoc_url="/redoc" if settings.is_development else None,
         openapi_url="/openapi.json" if settings.is_development else None,
+        swagger_ui_parameters={
+            "persistAuthorization": True,
+        },
     )
+
+    # Configure OpenAPI schema with API key security for Swagger UI
+    def custom_openapi():
+        if app.openapi_schema:
+            return app.openapi_schema
+
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+        )
+
+        # Add security scheme for Swagger UI authorization
+        schema["components"]["securitySchemes"] = {
+            "APIKeyHeader": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-API-KEY",
+            }
+        }
+
+        # Apply security to protected endpoints
+        public_paths = APIKeyMiddleware.public_paths()
+        for path, methods in schema["paths"].items():
+            if path not in public_paths:
+                for method in methods.values():
+                    if isinstance(method, dict):
+                        method["security"] = [{"APIKeyHeader": []}]
+
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = custom_openapi
 
     # Setup middleware
     setup_middleware(app)

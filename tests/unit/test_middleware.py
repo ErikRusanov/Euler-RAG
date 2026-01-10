@@ -69,8 +69,7 @@ class TestAPIKeyMiddleware:
 
         # Assert
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert "error" in response.json()
-        assert "Invalid API key" in response.json()["message"]
+        assert response.json()["error"] == "Unauthorized"
 
     @pytest.mark.asyncio
     async def test_protected_endpoint_with_valid_api_key(

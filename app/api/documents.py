@@ -7,7 +7,10 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/documents", tags=["Documents"])
+router = APIRouter(
+    prefix="/documents",
+    tags=["Documents"],
+)
 
 
 @router.post("", status_code=status.HTTP_501_NOT_IMPLEMENTED)
