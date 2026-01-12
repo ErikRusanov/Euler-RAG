@@ -11,6 +11,8 @@ from typing import Any, AsyncIterator, Optional
 
 from redis.asyncio import Redis
 
+from app.utils.pubsub import PubSubService
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,6 +68,7 @@ class ProgressTracker:
             redis: Async Redis client instance.
         """
         self._redis = redis
+        self._pubsub = PubSubService(redis)
 
     async def update(self, progress: Progress) -> None:
         """Update progress and publish notification.
@@ -79,10 +82,11 @@ class ProgressTracker:
         key = f"{self.KEY_PREFIX}{progress.document_id}"
         channel = f"{self.CHANNEL_PREFIX}{progress.document_id}"
 
-        data = json.dumps(progress.to_dict())
+        data = progress.to_dict()
+        data_json = json.dumps(data)
 
-        await self._redis.setex(key, self.TTL_SECONDS, data)
-        await self._redis.publish(channel, data)
+        await self._redis.setex(key, self.TTL_SECONDS, data_json)
+        await self._pubsub.publish(channel, data)
 
         logger.debug(
             "Progress updated",
@@ -124,18 +128,9 @@ class ProgressTracker:
             Progress objects as they are published.
         """
         channel = f"{self.CHANNEL_PREFIX}{document_id}"
-        pubsub = self._redis.pubsub()
 
-        await pubsub.subscribe(channel)
-
-        try:
-            async for message in pubsub.listen():
-                if message["type"] == "message":
-                    data = json.loads(message["data"])
-                    yield Progress(**data)
-        finally:
-            await pubsub.unsubscribe(channel)
-            await pubsub.close()
+        async for data in self._pubsub.subscribe(channel):
+            yield Progress(**data)
 
     async def clear(self, document_id: int) -> None:
         """Clear progress data after processing complete.
