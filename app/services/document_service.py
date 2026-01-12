@@ -8,6 +8,8 @@ find() method.
 import logging
 from typing import Any, BinaryIO, Optional
 
+from sqlalchemy import select
+
 from app.exceptions import InvalidFileTypeError, RelatedRecordNotFoundError
 from app.models.document import Document
 from app.models.subject import Subject
@@ -136,13 +138,19 @@ class DocumentService(BaseService[Document]):
             DatabaseConnectionError: If database operation fails.
         """
         if subject_id is not None:
-            subject = await Subject.get_by_id(self.db, subject_id)
+            result = await self.db.execute(
+                select(Subject).where(Subject.id == subject_id)
+            )
+            subject = result.scalar_one_or_none()
             if not subject:
                 raise RelatedRecordNotFoundError("subject_id", subject_id)
             kwargs["subject_id"] = subject_id
 
         if teacher_id is not None:
-            teacher = await Teacher.get_by_id(self.db, teacher_id)
+            result = await self.db.execute(
+                select(Teacher).where(Teacher.id == teacher_id)
+            )
+            teacher = result.scalar_one_or_none()
             if not teacher:
                 raise RelatedRecordNotFoundError("teacher_id", teacher_id)
             kwargs["teacher_id"] = teacher_id

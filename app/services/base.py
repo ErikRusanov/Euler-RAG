@@ -3,6 +3,7 @@
 import logging
 from typing import Any, Generic, List, Optional, TypeVar
 
+from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError, IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,8 +22,7 @@ T = TypeVar("T", bound=BaseModel)
 class BaseService(Generic[T]):
     """Base service class managing database transactions for model operations.
 
-    This service wraps BaseModel methods and provides automatic transaction
-    management:
+    Provides automatic transaction management using direct SQLAlchemy queries:
     - Write operations (create, update, delete) automatically commit
     - Read operations (get_by_id, get_all, find, count) don't commit
     - All errors trigger automatic rollback
@@ -64,7 +64,10 @@ class BaseService(Generic[T]):
             IntegrityError: If unique constraint is violated
         """
         try:
-            instance = await self.model.create(self.db, **kwargs)
+            instance = self.model(**kwargs)
+            self.db.add(instance)
+            await self.db.flush()
+            await self.db.refresh(instance)
             await self.db.commit()
             logger.debug(
                 f"Created {self.model.__name__}",
@@ -101,7 +104,10 @@ class BaseService(Generic[T]):
             DatabaseConnectionError: If database operation fails
         """
         try:
-            return await self.model.get_by_id(self.db, record_id)
+            result = await self.db.execute(
+                select(self.model).where(self.model.id == record_id)
+            )
+            return result.scalar_one_or_none()
         except (DBAPIError, SQLAlchemyError) as e:
             logger.error(
                 f"Failed to get {self.model.__name__} by id",
@@ -125,17 +131,10 @@ class BaseService(Generic[T]):
             RecordNotFoundError: If record not found
             DatabaseConnectionError: If database operation fails
         """
-        try:
-            return await self.model.get_by_id_or_fail(self.db, record_id)
-        except RecordNotFoundError:
-            raise
-        except (DBAPIError, SQLAlchemyError) as e:
-            logger.error(
-                f"Failed to get {self.model.__name__} by id",
-                extra={"model": self.model.__name__, "id": record_id, "error": str(e)},
-                exc_info=True,
-            )
-            raise DatabaseConnectionError(f"Database error during get: {str(e)}") from e
+        record = await self.get_by_id(record_id)
+        if record is None:
+            raise RecordNotFoundError(self.model.__name__, record_id)
+        return record
 
     async def get_all(
         self, limit: Optional[int] = None, offset: Optional[int] = None
@@ -155,7 +154,13 @@ class BaseService(Generic[T]):
             DatabaseConnectionError: If database operation fails
         """
         try:
-            return await self.model.get_all(self.db, limit=limit, offset=offset)
+            query = select(self.model)
+            if offset:
+                query = query.offset(offset)
+            if limit:
+                query = query.limit(limit)
+            result = await self.db.execute(query)
+            return list(result.scalars().all())
         except (DBAPIError, SQLAlchemyError) as e:
             logger.error(
                 f"Failed to get all {self.model.__name__}",
@@ -182,7 +187,15 @@ class BaseService(Generic[T]):
             DatabaseConnectionError: If database operation fails
         """
         try:
-            return await self.model.find(self.db, **filters)
+            query = select(self.model)
+            for key, value in filters.items():
+                if not hasattr(self.model, key):
+                    raise InvalidFilterError(
+                        f"Invalid filter key '{key}' for model {self.model.__name__}"
+                    )
+                query = query.where(getattr(self.model, key) == value)
+            result = await self.db.execute(query)
+            return list(result.scalars().all())
         except InvalidFilterError:
             raise
         except (DBAPIError, SQLAlchemyError) as e:
@@ -215,7 +228,15 @@ class BaseService(Generic[T]):
             DatabaseConnectionError: If database operation fails
         """
         try:
-            return await self.model.count(self.db, **filters)
+            query = select(func.count(self.model.id))
+            for key, value in filters.items():
+                if not hasattr(self.model, key):
+                    raise InvalidFilterError(
+                        f"Invalid filter key '{key}' for model {self.model.__name__}"
+                    )
+                query = query.where(getattr(self.model, key) == value)
+            result = await self.db.execute(query)
+            return result.scalar_one()
         except InvalidFilterError:
             raise
         except (DBAPIError, SQLAlchemyError) as e:
@@ -248,14 +269,21 @@ class BaseService(Generic[T]):
             DatabaseConnectionError: If database operation fails
         """
         try:
-            record = await self.model.get_by_id_or_fail(self.db, record_id)
-            updated_record = await record.update(self.db, **kwargs)
+            record = await self.get_by_id_or_fail(record_id)
+            for key, value in kwargs.items():
+                if not hasattr(record, key):
+                    raise InvalidFilterError(
+                        f"Invalid attribute '{key}' for model {self.model.__name__}"
+                    )
+                setattr(record, key, value)
+            await self.db.flush()
+            await self.db.refresh(record)
             await self.db.commit()
             logger.debug(
                 f"Updated {self.model.__name__}",
                 extra={"model": self.model.__name__, "id": record_id},
             )
-            return updated_record
+            return record
         except (RecordNotFoundError, InvalidFilterError):
             await self.db.rollback()
             raise
@@ -289,8 +317,9 @@ class BaseService(Generic[T]):
             DatabaseConnectionError: If database operation fails
         """
         try:
-            record = await self.model.get_by_id_or_fail(self.db, record_id)
-            await record.delete(self.db)
+            record = await self.get_by_id_or_fail(record_id)
+            await self.db.delete(record)
+            await self.db.flush()
             await self.db.commit()
             logger.debug(
                 f"Deleted {self.model.__name__}",
