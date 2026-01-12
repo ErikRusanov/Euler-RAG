@@ -82,8 +82,8 @@ class DocumentHandler(BaseTaskHandler):
         await db.commit()
 
         try:
-            # Download PDF from S3
-            pdf_bytes = self._s3.download_file(document.s3_key)
+            # Download PDF from S3 (run in thread to avoid blocking event loop)
+            pdf_bytes = await asyncio.to_thread(self._s3.download_file, document.s3_key)
 
             # Count pages
             pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
