@@ -6,10 +6,13 @@ from fastapi import APIRouter, Depends, UploadFile, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.document import DocumentStatus
 from app.schemas.document import DocumentResponse, DocumentUpdate
 from app.services.document_service import DocumentService
 from app.utils.db import get_db_session
+from app.utils.redis import get_redis_client
 from app.utils.s3 import S3Storage, get_s3_storage
+from app.workers.queue import TaskQueue, TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +88,38 @@ async def update_document(
 ) -> DocumentResponse:
     """Update document fields."""
     service = DocumentService(db)
-    return await service.update_document(
-        document_id, **data.model_dump(exclude_unset=True)
+
+    current_document = await service.get_by_id_or_fail(document_id)
+    update_data = data.model_dump(exclude_unset=True)
+
+    # Check if status is being changed from UPLOADED to PENDING
+    new_status = update_data.get("status")
+    should_enqueue = (
+        current_document.status == DocumentStatus.UPLOADED
+        and "status" in update_data
+        and (
+            new_status == DocumentStatus.PENDING
+            or (
+                isinstance(new_status, str)
+                and new_status == DocumentStatus.PENDING.value
+            )
+        )
     )
+
+    updated_document = await service.update_document(document_id, **update_data)
+
+    if should_enqueue:
+        try:
+            queue = TaskQueue(get_redis_client())
+            await queue.enqueue(TaskType.DOCUMENT_PROCESS, {"document_id": document_id})
+        except Exception as e:
+            logger.error(
+                "Failed to enqueue document processing task",
+                extra={"document_id": document_id, "error": str(e)},
+                exc_info=True,
+            )
+
+    return DocumentResponse.model_validate(updated_document)
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -115,6 +115,7 @@ class DocumentHandler(BaseTaskHandler):
             # Mark as ready
             document.status = DocumentStatus.READY
             document.processed_at = datetime.now(timezone.utc)
+            document.error = None
             document.progress = {"page": total_pages, "total": total_pages}
 
             # Final progress update
@@ -136,13 +137,10 @@ class DocumentHandler(BaseTaskHandler):
         except TaskError:
             raise
         except Exception as e:
-            # Set error status and commit before raising
-            # (base handler will rollback, but we want error state persisted)
             document.status = DocumentStatus.ERROR
             document.error = str(e)
             await db.commit()
 
-            # Update progress with error
             await self._progress.update(
                 Progress(
                     document_id=document_id,
