@@ -77,9 +77,9 @@ class DocumentHandler(BaseTaskHandler):
                 retryable=False,
             )
 
-        # Set status to PROCESSING
+        # Set status to PROCESSING (flush to make visible in same transaction)
         document.status = DocumentStatus.PROCESSING
-        await db.commit()
+        await db.flush()
 
         try:
             # Download PDF from S3 (run in thread to avoid blocking event loop)
@@ -137,9 +137,11 @@ class DocumentHandler(BaseTaskHandler):
         except TaskError:
             raise
         except Exception as e:
-            # Set error status
+            # Set error status and commit before raising
+            # (base handler will rollback, but we want error state persisted)
             document.status = DocumentStatus.ERROR
             document.error = str(e)
+            await db.commit()
 
             # Update progress with error
             await self._progress.update(
