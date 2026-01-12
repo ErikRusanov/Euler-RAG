@@ -63,14 +63,18 @@ class TaskQueue:
     RETRY_DELAYS = [5, 30, 120]  # 5s, 30s, 2min
     CLAIM_MIN_IDLE_MS = 300_000  # 5 minutes - claim orphaned messages after this
 
-    def __init__(self, redis: Redis) -> None:
+    def __init__(self, redis: Redis, worker_id: int | None = None) -> None:
         """Initialize TaskQueue with Redis client.
 
         Args:
             redis: Async Redis client instance.
+            worker_id: Optional worker identifier for unique consumer name.
         """
         self._redis = redis
-        self._consumer_name = f"worker-{uuid4().hex[:8]}"
+        base_name = f"worker-{uuid4().hex[:8]}"
+        self._consumer_name = (
+            f"{base_name}-{worker_id}" if worker_id is not None else base_name
+        )
 
     async def setup(self) -> None:
         """Create consumer group if it doesn't exist.

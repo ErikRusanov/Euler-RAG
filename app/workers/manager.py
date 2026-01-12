@@ -6,8 +6,8 @@ startup and handling graceful shutdown.
 
 import asyncio
 import logging
-from typing import Optional
 
+from app.config import get_settings
 from app.utils.db import db_manager
 from app.utils.redis import get_redis_client
 from app.utils.s3 import get_s3_storage
@@ -22,31 +22,38 @@ logger = logging.getLogger(__name__)
 class WorkerManager:
     """Manages background task processing.
 
-    Starts worker coroutines on application startup and handles
-    graceful shutdown on SIGTERM/SIGINT.
+    Starts multiple concurrent worker coroutines on application startup
+    and handles graceful shutdown on SIGTERM/SIGINT.
 
     Usage:
         manager = WorkerManager()
         await manager.start()  # Start processing
         # ... application runs ...
         await manager.stop()   # Graceful shutdown
+
+    Attributes:
+        concurrency: Number of concurrent worker tasks (from settings).
     """
 
     def __init__(self) -> None:
         """Initialize WorkerManager with empty state."""
-        self._queue: Optional[TaskQueue] = None
+        settings = get_settings()
+        self._concurrency = settings.worker_concurrency
+        self._queues: list[TaskQueue] = []
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._tasks: list[asyncio.Task] = []
         self._handlers: dict[TaskType, BaseTaskHandler] = {}
 
     async def start(self) -> None:
         """Start the worker processing loop.
 
-        Initializes task queue, handlers, and begins processing.
+        Initializes task queues (one per worker), handlers, and begins processing.
         """
         redis = get_redis_client()
-        self._queue = TaskQueue(redis)
-        await self._queue.setup()
+
+        # Create queue for setup (consumer group creation)
+        setup_queue = TaskQueue(redis)
+        await setup_queue.setup()
 
         # Initialize progress tracker
         progress_tracker = ProgressTracker(redis)
@@ -64,39 +71,55 @@ class WorkerManager:
         }
 
         self._running = True
-        self._task = asyncio.create_task(self._run())
+
+        # Start multiple concurrent worker tasks, each with its own queue
+        for i in range(self._concurrency):
+            queue = TaskQueue(redis, worker_id=i)
+            self._queues.append(queue)
+            task = asyncio.create_task(self._run(queue), name=f"worker-{i}")
+            self._tasks.append(task)
 
         logger.info(
             "Worker manager started",
-            extra={"handlers": list(self._handlers.keys())},
+            extra={
+                "concurrency": self._concurrency,
+                "handlers": list(self._handlers.keys()),
+            },
         )
 
     async def stop(self) -> None:
         """Stop the worker gracefully.
 
-        Signals the worker loop to stop and waits for current
-        task to complete.
+        Signals all worker loops to stop and waits for current
+        tasks to complete.
         """
-        logger.info("Stopping worker manager...")
+        logger.info(
+            "Stopping worker manager...",
+            extra={"active_tasks": len(self._tasks)},
+        )
         self._running = False
 
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+        # Cancel all worker tasks
+        for task in self._tasks:
+            task.cancel()
+
+        # Wait for all tasks to complete
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+            self._tasks.clear()
+            self._queues.clear()
 
         logger.info("Worker manager stopped")
 
-    async def _run(self) -> None:
-        """Main processing loop.
+    async def _run(self, queue: TaskQueue) -> None:
+        """Main processing loop for a single worker.
 
-        Continuously dequeues and processes tasks until stopped.
+        Args:
+            queue: TaskQueue instance with unique consumer name for this worker.
         """
         while self._running:
             try:
-                task = await self._queue.dequeue(block_ms=5000)
+                task = await queue.dequeue(block_ms=5000)
 
                 if task is None:
                     continue
@@ -107,12 +130,12 @@ class WorkerManager:
                         "No handler for task type",
                         extra={"type": task.type},
                     )
-                    await self._queue.fail(task, f"Unknown task type: {task.type}")
+                    await queue.fail(task, f"Unknown task type: {task.type}")
                     continue
 
                 try:
                     await handler.execute(task)
-                    await self._queue.ack(task)
+                    await queue.ack(task)
                     logger.info(
                         "Task completed",
                         extra={"task_id": task.id, "type": task.type.value},
@@ -128,16 +151,16 @@ class WorkerManager:
                         },
                     )
                     if e.retryable:
-                        await self._queue.retry(task, str(e))
+                        await queue.retry(task, str(e))
                     else:
-                        await self._queue.fail(task, str(e))
+                        await queue.fail(task, str(e))
 
                 except Exception as e:
                     logger.exception(
                         "Unexpected task error",
                         extra={"task_id": task.id, "error": str(e)},
                     )
-                    await self._queue.fail(task, str(e))
+                    await queue.fail(task, str(e))
 
             except asyncio.CancelledError:
                 break

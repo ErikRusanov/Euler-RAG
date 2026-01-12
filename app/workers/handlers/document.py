@@ -85,9 +85,8 @@ class DocumentHandler(BaseTaskHandler):
             # Download PDF from S3 (run in thread to avoid blocking event loop)
             pdf_bytes = await asyncio.to_thread(self._s3.download_file, document.s3_key)
 
-            # Count pages
-            pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
-            total_pages = len(pdf_reader.pages)
+            # Parse PDF in thread (CPU-bound operation)
+            total_pages = await asyncio.to_thread(self._count_pdf_pages, pdf_bytes)
 
             logger.info(
                 "Processing document",
@@ -155,6 +154,21 @@ class DocumentHandler(BaseTaskHandler):
             )
 
             raise TaskError(str(e), retryable=False)
+
+    @staticmethod
+    def _count_pdf_pages(pdf_bytes: bytes) -> int:
+        """Count pages in PDF file.
+
+        This is a CPU-bound operation, should be called via asyncio.to_thread().
+
+        Args:
+            pdf_bytes: PDF file content as bytes.
+
+        Returns:
+            Number of pages in the PDF.
+        """
+        pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+        return len(pdf_reader.pages)
 
     async def update_status(
         self,

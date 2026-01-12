@@ -70,6 +70,8 @@ class TestTaskQueueDequeue:
             "payload": json.dumps({"document_id": 1}),
             "retries": "0",
         }
+        # Mock xautoclaim to return no orphaned messages
+        mock_redis.xautoclaim = AsyncMock(return_value=[None, [], []])
         # First call (pending) returns empty, second call (new) returns task
         mock_redis.xreadgroup = AsyncMock(
             side_effect=[
@@ -92,6 +94,8 @@ class TestTaskQueueDequeue:
         self, task_queue: TaskQueue, mock_redis: MagicMock
     ):
         """Dequeue should return None when no tasks available."""
+        # Mock xautoclaim to return no orphaned messages
+        mock_redis.xautoclaim = AsyncMock(return_value=[None, [], []])
         mock_redis.xreadgroup = AsyncMock(return_value=[])
 
         task = await task_queue.dequeue(block_ms=100)

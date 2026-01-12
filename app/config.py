@@ -96,6 +96,14 @@ class Settings(BaseSettings):
     redis_db: int = Field(default=0, ge=0, le=15, description="Redis database number")
     redis_password: str = Field(default="", description="Redis password")
 
+    # Worker Settings
+    worker_concurrency: int = Field(
+        default=4,
+        ge=1,
+        le=32,
+        description="Number of concurrent worker tasks",
+    )
+
     @field_validator("db_password")
     @classmethod
     def validate_db_password_in_production(cls, v: str, info) -> str:
