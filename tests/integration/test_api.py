@@ -88,15 +88,19 @@ class TestDocumentsAPI:
         assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED
 
     @pytest.mark.asyncio
-    async def test_get_document_by_id_stub_response(self, api_client):
-        """GET /api/documents/{id} returns stub response."""
+    async def test_get_document_by_id_not_found(self, api_client):
+        """GET /api/documents/{id} returns 404 for non-existent document."""
         client, settings = api_client
 
         response = await client.get(
             "/api/documents/123", headers={"X-API-KEY": settings.api_key}
         )
 
-        assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        data = response.json()
+        assert data["error"] == "Not Found"
+        assert data["model"] == "Document"
+        assert data["record_id"] == 123
 
 
 class TestHealthEndpoint:

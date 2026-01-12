@@ -13,4 +13,5 @@ class TestApplication:
 
         assert "/" in routes
         assert "/health" in routes
-        assert "/documents" in routes
+        # Documents routes are under /api prefix (protected)
+        assert "/api/documents" in routes

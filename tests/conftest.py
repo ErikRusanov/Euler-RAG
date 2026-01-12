@@ -3,7 +3,7 @@
 import os
 from collections.abc import AsyncGenerator
 from typing import Generator, Optional
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +15,7 @@ from app.application import create_app
 from app.config import Settings, get_settings
 from app.models.base import BaseModel
 from app.utils.db import Base
-from app.utils.s3 import S3Storage
+from app.utils.s3 import S3Storage, s3_manager
 
 
 # Test model for integration tests (not prefixed with Test to avoid pytest collection)
@@ -167,8 +167,15 @@ def app(test_settings: Settings) -> Generator:
                     mock_init_s3.return_value = None
                     mock_close_s3.return_value = None
 
+                    # Mock s3_manager.storage so get_s3_storage() works
+                    mock_s3_storage = MagicMock(spec=S3Storage)
+                    s3_manager.storage = mock_s3_storage
+
                     application = create_app()
                     yield application
+
+                    # Cleanup
+                    s3_manager.storage = None
 
 
 @pytest.fixture
