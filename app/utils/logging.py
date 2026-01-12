@@ -17,6 +17,32 @@ class StructuredFormatter(logging.Formatter):
     Includes additional context fields like timestamp, level, module, etc.
     """
 
+    # Standard LogRecord attributes that should not be included as extra fields
+    _STANDARD_ATTRS = {
+        "name",
+        "msg",
+        "args",
+        "created",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "module",
+        "msecs",
+        "message",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "thread",
+        "threadName",
+        "exc_info",
+        "exc_text",
+        "stack_info",
+        "getMessage",
+    }
+
     def format(self, record: logging.LogRecord) -> str:
         """Format log record with structured information.
 
@@ -34,9 +60,10 @@ class StructuredFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        # Add extra fields if present
-        if hasattr(record, "extra"):
-            log_data.update(record.extra)
+        # Add extra fields (user-provided attributes not in standard LogRecord)
+        for key, value in record.__dict__.items():
+            if key not in self._STANDARD_ATTRS and not key.startswith("_"):
+                log_data[key] = value
 
         # Add exception info if present
         if record.exc_info:
