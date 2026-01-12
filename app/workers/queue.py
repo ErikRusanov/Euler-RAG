@@ -61,6 +61,7 @@ class TaskQueue:
     DLQ_KEY = "euler:tasks:dlq"
     MAX_RETRIES = 3
     RETRY_DELAYS = [5, 30, 120]  # 5s, 30s, 2min
+    CLAIM_MIN_IDLE_MS = 300_000  # 5 minutes - claim orphaned messages after this
 
     def __init__(self, redis: Redis) -> None:
         """Initialize TaskQueue with Redis client.
@@ -152,7 +153,12 @@ class TaskQueue:
 
     async def _dequeue_impl(self, block_ms: int) -> Optional[Task]:
         """Internal dequeue implementation."""
-        # First, check for pending messages (retries)
+        # First, try to claim orphaned messages from crashed consumers
+        claimed = await self._claim_orphaned()
+        if claimed:
+            return claimed
+
+        # Then, check for our own pending messages (retries)
         pending = await self._redis.xreadgroup(
             self.GROUP_NAME,
             self._consumer_name,
@@ -182,6 +188,51 @@ class TaskQueue:
             stream_id=stream_id,
             retries=int(data.get("retries", 0)),
         )
+
+    async def _claim_orphaned(self) -> Optional[Task]:
+        """Claim orphaned messages from crashed consumers.
+
+        Uses XAUTOCLAIM to take ownership of messages that have been
+        pending longer than CLAIM_MIN_IDLE_MS.
+
+        Returns:
+            Task if an orphaned message was claimed, None otherwise.
+        """
+        try:
+            result = await self._redis.xautoclaim(
+                self.STREAM_KEY,
+                self.GROUP_NAME,
+                self._consumer_name,
+                min_idle_time=self.CLAIM_MIN_IDLE_MS,
+                start_id="0-0",
+                count=1,
+            )
+
+            # xautoclaim returns: [next_id, [[stream_id, data], ...], [deleted]]
+            if not result or not result[1]:
+                return None
+
+            stream_id, data = result[1][0]
+
+            logger.info(
+                "Claimed orphaned task",
+                extra={"task_id": data["id"], "stream_id": stream_id},
+            )
+
+            return Task(
+                id=data["id"],
+                type=TaskType(data["type"]),
+                payload=json.loads(data["payload"]),
+                stream_id=stream_id,
+                retries=int(data.get("retries", 0)),
+            )
+
+        except Exception as e:
+            # XAUTOCLAIM may fail on older Redis versions
+            if "unknown command" in str(e).lower():
+                logger.debug("XAUTOCLAIM not supported, skipping orphan claim")
+                return None
+            raise
 
     async def ack(self, task: Task) -> None:
         """Acknowledge task completion.
