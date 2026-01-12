@@ -1,4 +1,4 @@
-.PHONY: clean format db-up db-down db-restart db-logs run dev run-prod
+.PHONY: clean format db-up db-down db-restart db-logs redis-up redis-down redis-logs run dev run-prod
 
 clean:
 	@bash scripts/clean.sh
@@ -29,13 +29,26 @@ db-restart:
 db-logs:
 	@docker-compose logs -f postgres
 
+redis-up:
+	@echo "Starting Redis via Docker Compose..."
+	@docker-compose up -d redis
+	@echo "Waiting for Redis to become ready..."
+	@docker-compose exec -T redis redis-cli ping || sleep 2
+
+redis-down:
+	@echo "Stopping Redis..."
+	@docker-compose stop redis
+
+redis-logs:
+	@docker-compose logs -f redis
+
 test:
 	@echo "Setting up test database..."
 	@bash scripts/setup_test_db.sh
 	@echo "Running all tests..."
 	@pytest tests/ -v
 
-run: db-up
+run: db-up redis-up
 	@echo "Starting application..."
 	@python -m app.main
 

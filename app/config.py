@@ -90,6 +90,12 @@ class Settings(BaseSettings):
         description="S3 region",
     )
 
+    # Redis Settings
+    redis_host: str = Field(default="localhost", description="Redis host")
+    redis_port: int = Field(default=6379, ge=1, le=65535, description="Redis port")
+    redis_db: int = Field(default=0, ge=0, le=15, description="Redis database number")
+    redis_password: str = Field(default="", description="Redis password")
+
     @field_validator("db_password")
     @classmethod
     def validate_db_password_in_production(cls, v: str, info) -> str:
@@ -126,6 +132,16 @@ class Settings(BaseSettings):
             f"postgresql://{self.db_user}:{self.db_password}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
         )
+
+    @property
+    def redis_url(self) -> str:
+        """Build Redis connection URL."""
+        if self.redis_password:
+            return (
+                f"redis://:{self.redis_password}@{self.redis_host}"
+                f":{self.redis_port}/{self.redis_db}"
+            )
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     @property
     def is_production(self) -> bool:

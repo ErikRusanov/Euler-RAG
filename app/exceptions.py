@@ -52,3 +52,11 @@ class InvalidFileTypeError(AppError):
         super().__init__(
             f"Invalid file type '{received_type}'. Allowed: {', '.join(allowed_types)}"
         )
+
+
+class RedisConnectionError(AppError):
+    """Raised when Redis connection fails."""
+
+
+class RedisOperationError(AppError):
+    """Raised when Redis operation fails."""

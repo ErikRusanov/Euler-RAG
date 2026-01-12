@@ -28,6 +28,10 @@ Edit `.env` and configure the following variables:
 - `DB_NAME` - Database name (default: `euler_rag`)
 - `DB_HOST` - Database host (default: `localhost`)
 - `DB_PORT` - Database port (default: `5432`)
+- `REDIS_HOST` - Redis host (default: `localhost`)
+- `REDIS_PORT` - Redis port (default: `6379`)
+- `REDIS_DB` - Redis database number (default: `0`)
+- `REDIS_PASSWORD` - Redis password (optional)
 - `API_TITLE`, `API_VERSION`, `DEBUG`, `HOST`, `PORT` - Application settings
 
 ## Development Tools
@@ -35,11 +39,12 @@ Edit `.env` and configure the following variables:
 ### Makefile
 
 ```bash
+make run         # Start PostgreSQL, Redis and application
 make format      # Format code (autoflake, isort, black)
 make db-up       # Start PostgreSQL database
 make db-down     # Stop PostgreSQL database
-make db-restart  # Restart PostgreSQL database
-make db-logs     # View database logs
+make redis-up    # Start Redis
+make redis-down  # Stop Redis
 make clean       # Remove temporary files
 ```
 
