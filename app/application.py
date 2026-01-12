@@ -68,9 +68,15 @@ def _setup_cors(app: FastAPI, settings: Settings) -> None:
             allow_headers=["*"],
         )
     else:
+        origins = settings.cors_origins
+        if not origins:
+            logger.warning(
+                "CORS origins not configured for production, "
+                "all cross-origin requests will be blocked"
+            )
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=[],
+            allow_origins=origins,
             allow_credentials=True,
             allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
             allow_headers=["*"],

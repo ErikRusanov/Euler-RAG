@@ -67,6 +67,10 @@ class Settings(BaseSettings):
         description="API key for authentication",
         min_length=1,
     )
+    cors_origins: list[str] = Field(
+        default_factory=list,
+        description="Allowed CORS origins for production",
+    )
 
     # S3 Storage Settings
     s3_endpoint_url: str = Field(
