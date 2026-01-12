@@ -74,23 +74,26 @@ def _build_response_content(exc: Exception, config: ExceptionConfig) -> dict[str
     """Build response content based on exception type."""
     content: dict[str, Any] = {"error": config.error_name}
 
-    if config.include_detail:
-        content["message"] = str(exc)
-
-    # Add exception-specific fields
-    if isinstance(exc, RecordNotFoundError):
-        content["model"] = exc.model_name
-        content["record_id"] = exc.record_id
-    elif isinstance(exc, RelatedRecordNotFoundError):
-        content["field"] = exc.field
-        content["record_id"] = exc.record_id
-    elif isinstance(exc, InvalidFileTypeError):
-        content["allowed_types"] = exc.allowed_types
-        content["received_type"] = exc.received_type
-    elif isinstance(exc, DatabaseConnectionError):
+    # Add message based on config and exception type
+    if isinstance(exc, DatabaseConnectionError):
         content["message"] = "Database connection error. Please try again later."
     elif isinstance(exc, S3OperationError):
         content["message"] = "Failed to process file in storage"
+    elif config.include_detail:
+        content["message"] = str(exc)
+
+    # Add exception-specific attributes
+    exception_attrs = {
+        RecordNotFoundError: ["model_name", "record_id"],
+        RelatedRecordNotFoundError: ["field", "record_id"],
+        InvalidFileTypeError: ["allowed_types", "received_type"],
+    }
+    for exc_type, attrs in exception_attrs.items():
+        if isinstance(exc, exc_type):
+            for attr in attrs:
+                if hasattr(exc, attr):
+                    content[attr] = getattr(exc, attr)
+            break
 
     return content
 
