@@ -14,7 +14,9 @@ from app.config import Settings, get_settings
 from app.middleware.auth import APIKeyMiddleware
 from app.utils.db import close_db, init_db
 from app.utils.exception_handlers import register_exception_handlers
+from app.utils.redis import close_redis, init_redis
 from app.utils.s3 import close_s3, init_s3
+from app.workers import worker_manager
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         await init_db()
         init_s3()
+        await init_redis()
+        await worker_manager.start()
         logger.info("Application startup complete")
     except Exception as e:
         logger.critical(f"Failed to start application: {e}")
@@ -46,6 +50,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     logger.info("Shutting down application...")
+    await worker_manager.stop()
+    await close_redis()
     close_s3()
     await close_db()
     logger.info("Application shutdown complete")

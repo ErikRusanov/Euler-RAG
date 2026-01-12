@@ -166,6 +166,37 @@ class S3Storage:
             logger.error(f"Failed to generate presigned URL: {e}")
             raise S3OperationError(f"Failed to get file URL: {e}") from e
 
+    def download_file(self, key: str) -> bytes:
+        """Download file from S3 storage.
+
+        Args:
+            key: S3 key of the file to download.
+
+        Returns:
+            File contents as bytes.
+
+        Raises:
+            S3OperationError: If download fails or file not found.
+        """
+        try:
+            response = self._client.get_object(
+                Bucket=self._bucket_name,
+                Key=key,
+            )
+            data = response["Body"].read()
+            logger.info(
+                "File downloaded from S3",
+                extra={"key": key, "size": len(data)},
+            )
+            return data
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code == "NoSuchKey":
+                logger.error(f"File not found in S3: {key}")
+                raise S3OperationError(f"File not found: {key}") from e
+            logger.error(f"Failed to download file from S3: {e}")
+            raise S3OperationError(f"Failed to download file: {e}") from e
+
     def delete_file(self, key: str) -> None:
         """Delete file from S3 storage.
 

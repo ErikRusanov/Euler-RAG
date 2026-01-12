@@ -55,6 +55,10 @@ def test_settings() -> Settings:
 
     os.environ["DB_NAME"] = "euler_rag_test"
 
+    # Use separate Redis database for tests (db=1)
+    # to avoid conflicts with running app (db=0)
+    os.environ["REDIS_DB"] = "1"
+
     get_settings.cache_clear()
     return get_settings()
 
