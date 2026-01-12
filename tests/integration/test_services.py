@@ -32,7 +32,7 @@ async def test_create_commits_automatically(db_session: AsyncSession):
     user = await service.create(name="John", email="john@example.com")
 
     assert user.id is not None
-    found = await IntegrationUser.get_by_id(db_session, user.id)
+    found = await service.get_by_id(user.id)
     assert found is not None
     assert found.name == "John"
 
@@ -59,7 +59,7 @@ async def test_update_commits_automatically(db_session: AsyncSession):
     updated = await service.update(user.id, name="New")
 
     assert updated.name == "New"
-    found = await IntegrationUser.get_by_id(db_session, user.id)
+    found = await service.get_by_id(user.id)
     assert found.name == "New"
 
 
@@ -74,7 +74,7 @@ async def test_update_rollback_on_constraint_violation(db_session: AsyncSession)
     with pytest.raises(DatabaseConnectionError):
         await service.update(user2_id, email="user1@example.com")
 
-    found = await IntegrationUser.get_by_id(db_session, user2_id)
+    found = await service.get_by_id(user2_id)
     assert found.email == "user2@example.com"
 
 
@@ -87,7 +87,7 @@ async def test_delete_commits_automatically(db_session: AsyncSession):
 
     await service.delete(user_id)
 
-    found = await IntegrationUser.get_by_id(db_session, user_id)
+    found = await service.get_by_id(user_id)
     assert found is None
 
 

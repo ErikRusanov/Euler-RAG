@@ -83,17 +83,15 @@ def _build_response_content(exc: Exception, config: ExceptionConfig) -> dict[str
         content["message"] = str(exc)
 
     # Add exception-specific attributes
-    exception_attrs = {
-        RecordNotFoundError: ["model_name", "record_id"],
-        RelatedRecordNotFoundError: ["field", "record_id"],
-        InvalidFileTypeError: ["allowed_types", "received_type"],
-    }
-    for exc_type, attrs in exception_attrs.items():
-        if isinstance(exc, exc_type):
-            for attr in attrs:
-                if hasattr(exc, attr):
-                    content[attr] = getattr(exc, attr)
-            break
+    if isinstance(exc, RecordNotFoundError):
+        content["model"] = exc.model_name
+        content["record_id"] = exc.record_id
+    elif isinstance(exc, RelatedRecordNotFoundError):
+        content["field"] = exc.field
+        content["record_id"] = exc.record_id
+    elif isinstance(exc, InvalidFileTypeError):
+        content["allowed_types"] = exc.allowed_types
+        content["received_type"] = exc.received_type
 
     return content
 
