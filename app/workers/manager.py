@@ -91,7 +91,7 @@ class WorkerManager:
         """Stop the worker gracefully.
 
         Signals all worker loops to stop and waits for current
-        tasks to complete.
+        tasks to complete with timeout.
         """
         logger.info(
             "Stopping worker manager...",
@@ -103,11 +103,21 @@ class WorkerManager:
         for task in self._tasks:
             task.cancel()
 
-        # Wait for all tasks to complete
+        # Wait for all tasks to complete with timeout
         if self._tasks:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
-            self._tasks.clear()
-            self._queues.clear()
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._tasks, return_exceptions=True),
+                    timeout=30.0,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Worker shutdown timeout exceeded, "
+                    "tasks may not have completed gracefully"
+                )
+            finally:
+                self._tasks.clear()
+                self._queues.clear()
 
         logger.info("Worker manager stopped")
 
