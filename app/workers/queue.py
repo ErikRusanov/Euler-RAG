@@ -31,12 +31,14 @@ class Task:
         type: Task type enum value.
         payload: Task data dictionary.
         stream_id: Redis stream message ID for acknowledgement.
+        retries: Number of retry attempts made.
     """
 
     id: str
     type: TaskType
     payload: dict[str, Any]
     stream_id: str
+    retries: int = 0
 
 
 class TaskQueue:
@@ -50,11 +52,15 @@ class TaskQueue:
         STREAM_KEY: Redis key for the main task stream.
         GROUP_NAME: Consumer group name.
         DLQ_KEY: Redis key for dead letter queue.
+        MAX_RETRIES: Maximum number of retry attempts before DLQ.
+        RETRY_DELAYS: Exponential backoff delays in seconds.
     """
 
     STREAM_KEY = "euler:tasks"
     GROUP_NAME = "euler:workers"
     DLQ_KEY = "euler:tasks:dlq"
+    MAX_RETRIES = 3
+    RETRY_DELAYS = [5, 30, 120]  # 5s, 30s, 2min
 
     def __init__(self, redis: Redis) -> None:
         """Initialize TaskQueue with Redis client.
@@ -174,6 +180,7 @@ class TaskQueue:
             type=TaskType(data["type"]),
             payload=json.loads(data["payload"]),
             stream_id=stream_id,
+            retries=int(data.get("retries", 0)),
         )
 
     async def ack(self, task: Task) -> None:
@@ -186,6 +193,54 @@ class TaskQueue:
         """
         await self._redis.xack(self.STREAM_KEY, self.GROUP_NAME, task.stream_id)
         logger.debug("Task acknowledged", extra={"task_id": task.id})
+
+    async def retry(self, task: Task, error: str) -> bool:
+        """Retry task with exponential backoff.
+
+        Re-enqueues task with incremented retry count if under MAX_RETRIES.
+        Moves to DLQ if max retries exceeded.
+
+        Args:
+            task: Task to retry.
+            error: Error message from failed attempt.
+
+        Returns:
+            True if task was re-enqueued, False if moved to DLQ.
+        """
+        new_retries = task.retries + 1
+
+        if new_retries >= self.MAX_RETRIES:
+            logger.warning(
+                "Max retries exceeded, moving to DLQ",
+                extra={"task_id": task.id, "retries": new_retries, "error": error},
+            )
+            await self.fail(task, f"Max retries ({self.MAX_RETRIES}) exceeded: {error}")
+            return False
+
+        # Acknowledge original message
+        await self.ack(task)
+
+        # Re-enqueue with incremented retry count
+        message = {
+            "id": task.id,
+            "type": task.type.value,
+            "payload": json.dumps(task.payload),
+            "retries": str(new_retries),
+        }
+
+        await self._redis.xadd(self.STREAM_KEY, message)
+
+        delay = self.RETRY_DELAYS[min(new_retries - 1, len(self.RETRY_DELAYS) - 1)]
+        logger.info(
+            "Task scheduled for retry",
+            extra={
+                "task_id": task.id,
+                "retry": new_retries,
+                "delay_seconds": delay,
+            },
+        )
+
+        return True
 
     async def fail(self, task: Task, error: str) -> None:
         """Move task to dead letter queue.

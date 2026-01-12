@@ -11,6 +11,7 @@ from typing import Optional
 from app.utils.db import db_manager
 from app.utils.redis import get_redis_client
 from app.utils.s3 import get_s3_storage
+from app.workers.handlers.base import BaseTaskHandler, TaskError
 from app.workers.handlers.document import DocumentHandler
 from app.workers.progress import ProgressTracker
 from app.workers.queue import TaskQueue, TaskType
@@ -36,7 +37,7 @@ class WorkerManager:
         self._queue: Optional[TaskQueue] = None
         self._running = False
         self._task: Optional[asyncio.Task] = None
-        self._handlers: dict = {}
+        self._handlers: dict[TaskType, BaseTaskHandler] = {}
 
     async def start(self) -> None:
         """Start the worker processing loop.
@@ -117,9 +118,23 @@ class WorkerManager:
                         extra={"task_id": task.id, "type": task.type.value},
                     )
 
+                except TaskError as e:
+                    logger.warning(
+                        "Task failed",
+                        extra={
+                            "task_id": task.id,
+                            "error": str(e),
+                            "retryable": e.retryable,
+                        },
+                    )
+                    if e.retryable:
+                        await self._queue.retry(task, str(e))
+                    else:
+                        await self._queue.fail(task, str(e))
+
                 except Exception as e:
                     logger.exception(
-                        "Task failed",
+                        "Unexpected task error",
                         extra={"task_id": task.id, "error": str(e)},
                     )
                     await self._queue.fail(task, str(e))
