@@ -29,10 +29,10 @@ class TestAPIKeyMiddleware:
 
     @pytest.mark.asyncio
     async def test_protected_endpoint_requires_key(self, api_client):
-        """Protected endpoints require API key."""
+        """Protected endpoints under /api require API key."""
         client, _ = api_client
 
-        response = await client.get("/documents")
+        response = await client.get("/api/documents")
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.json()["error"] == "Unauthorized"
@@ -42,7 +42,9 @@ class TestAPIKeyMiddleware:
         """Protected endpoints reject invalid API key."""
         client, _ = api_client
 
-        response = await client.get("/documents", headers={"X-API-KEY": "invalid-key"})
+        response = await client.get(
+            "/api/documents", headers={"X-API-KEY": "invalid-key"}
+        )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -51,9 +53,9 @@ class TestAPIKeyMiddleware:
         """Protected endpoints accept valid API key."""
         client, settings = api_client
 
-        # Use GET /documents (stub) to avoid S3 dependency
+        # Use GET /api/documents (stub) to avoid S3 dependency
         response = await client.get(
-            "/documents", headers={"X-API-KEY": settings.api_key}
+            "/api/documents", headers={"X-API-KEY": settings.api_key}
         )
 
         assert response.status_code != status.HTTP_401_UNAUTHORIZED
@@ -63,9 +65,9 @@ class TestAPIKeyMiddleware:
         """API key header is case-insensitive."""
         client, settings = api_client
 
-        # Use GET /documents (stub) to avoid S3 dependency
+        # Use GET /api/documents (stub) to avoid S3 dependency
         response = await client.get(
-            "/documents", headers={"x-api-key": settings.api_key}
+            "/api/documents", headers={"x-api-key": settings.api_key}
         )
 
         assert response.status_code != status.HTTP_401_UNAUTHORIZED
@@ -76,22 +78,22 @@ class TestDocumentsAPI:
 
     @pytest.mark.asyncio
     async def test_list_documents_stub_response(self, api_client):
-        """GET /documents returns stub response."""
+        """GET /api/documents returns stub response."""
         client, settings = api_client
 
         response = await client.get(
-            "/documents", headers={"X-API-KEY": settings.api_key}
+            "/api/documents", headers={"X-API-KEY": settings.api_key}
         )
 
         assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED
 
     @pytest.mark.asyncio
     async def test_get_document_by_id_stub_response(self, api_client):
-        """GET /documents/{id} returns stub response."""
+        """GET /api/documents/{id} returns stub response."""
         client, settings = api_client
 
         response = await client.get(
-            "/documents/123", headers={"X-API-KEY": settings.api_key}
+            "/api/documents/123", headers={"X-API-KEY": settings.api_key}
         )
 
         assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED

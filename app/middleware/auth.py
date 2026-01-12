@@ -15,24 +15,27 @@ logger = logging.getLogger(__name__)
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Middleware to validate API key for protected endpoints.
 
-    All endpoints except public paths require X-API-KEY header.
+    All endpoints under /api prefix require X-API-KEY header.
+    Other endpoints (health, docs, root) are public.
     """
 
+    PROTECTED_PREFIX: str = "/api"
+
     @classmethod
-    def public_paths(cls) -> set[str]:
-        """Return set of public endpoints that don't require authentication."""
-        return {
-            "/",
-            "/health",
-            "/health/db",
-            "/docs",
-            "/redoc",
-            "/openapi.json",
-        }
+    def is_protected_path(cls, path: str) -> bool:
+        """Check if path requires authentication.
+
+        Args:
+            path: Request URL path.
+
+        Returns:
+            True if path is under protected prefix and requires auth.
+        """
+        return path.startswith(cls.PROTECTED_PREFIX)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Process request and validate API key if required."""
-        if request.url.path in self.public_paths():
+        if not self.is_protected_path(request.url.path):
             return await call_next(request)
 
         # Get and validate API key

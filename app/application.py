@@ -9,9 +9,9 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from app.api.router import create_api_router
+from app.api.router import create_protected_router, create_public_router
 from app.config import Settings, get_settings
-from app.middleware import APIKeyMiddleware
+from app.middleware.auth import APIKeyMiddleware
 from app.utils.db import close_db, init_db
 from app.utils.exception_handlers import register_exception_handlers
 from app.utils.s3 import close_s3, init_s3
@@ -128,9 +128,8 @@ def _setup_openapi(app: FastAPI) -> None:
             }
         }
 
-        public_paths = APIKeyMiddleware.public_paths()
         for path, methods in schema["paths"].items():
-            if path not in public_paths:
+            if path.startswith(APIKeyMiddleware.PROTECTED_PREFIX):
                 for method in methods.values():
                     if isinstance(method, dict):
                         method["security"] = [{"APIKeyHeader": []}]
@@ -171,7 +170,10 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(app)
 
-    app.include_router(create_api_router())
+    # Mount public routes (no auth) at root
+    app.include_router(create_public_router())
+    # Mount protected routes (require API key) under /api prefix
+    app.include_router(create_protected_router())
 
     _setup_openapi(app)
 
