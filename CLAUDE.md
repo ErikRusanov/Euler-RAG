@@ -98,6 +98,27 @@ All mapped to HTTP responses via `app/utils/exception_handlers.py`
       """
   ```
 
+## Git Commits
+
+**Only commit after all tests pass (100%).**
+
+Use conventional commits format - one short sentence, no period:
+
+```
+type: short description
+```
+
+Types: `feat`, `fix`, `refactor`, `docs`, `tests`, `chore`
+
+Examples from this repo:
+```
+feat: added /documents listing API
+fix: fixed tests for new refactoring
+refactor: extract Redis pub/sub into separate PubSubService layer
+docs: add testing guidelines to CLAUDE.md
+tests: auth cookie tests added
+```
+
 ## Testing
 
 ### TDD Methodology
@@ -170,3 +191,113 @@ Copy `.env.template` to `.env`. Key variables:
 - `S3_*`: Object storage (endpoint, keys, bucket)
 - `API_KEY`: Required for protected endpoints (min 32 chars in production)
 - `WORKER_CONCURRENCY`: Parallel task workers (default 4)
+
+## Admin Panel Design
+
+### Critical Rules
+
+**NEVER write HTML or CSS in Python files.** Always use:
+- Jinja2 templates in `app/templates/` for HTML
+- Static CSS files in `app/static/css/` for styles
+
+### Design System
+
+Dark glassmorphism theme with minimalist aesthetic. **No gradients, no scale transformations on hover.**
+
+### Color Palette
+
+```css
+/* Backgrounds */
+--bg-primary: #0f0f0f;           /* Main background */
+--bg-secondary: #1a1a1a;         /* Secondary surfaces */
+--glass-bg: rgba(255, 255, 255, 0.03);  /* Translucent panels */
+--glass-border: rgba(255, 255, 255, 0.06);  /* Crisp borders */
+
+/* Text (monochrome grayscale) */
+--text-primary: rgba(255, 255, 255, 0.9);
+--text-secondary: rgba(255, 255, 255, 0.5);
+--text-muted: rgba(255, 255, 255, 0.3);
+
+/* Accent */
+--accent: #6366f1;               /* Indigo primary */
+--accent-hover: #818cf8;         /* Indigo lighter for hover */
+
+/* Status */
+--error: #ef4444;
+--success: #22c55e;
+```
+
+### Glass Panel Effect
+
+```css
+.glass-panel {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+}
+```
+
+### Typography
+
+- **Font**: Inter (Google Fonts)
+- **Weights**: 400 (regular), 500 (medium), 600 (semibold)
+- **Sizes**: 0.875rem (small), 1rem (body), 1.25rem (h2), 1.5rem (h1)
+
+### Interactive Elements
+
+**Buttons:**
+- Primary: `background: #6366f1` → hover: `background: #818cf8`
+- Secondary: transparent with border → hover: `color: rgba(255,255,255,0.9)`
+- **No scale transforms** - color changes only
+
+**Inputs:**
+- `background: rgba(255, 255, 255, 0.03)`
+- `border: 1px solid rgba(255, 255, 255, 0.06)`
+- Focus: `border-color: #6366f1`
+
+### Icons
+
+Use [Heroicons](https://heroicons.com/) (outline style, stroke-width 1.5):
+- Size: 16px (buttons), 24px (inline), 48px (decorative)
+- Color: inherit from parent or use CSS variables
+
+### File Structure
+
+```
+app/
+├── templates/           # Jinja2 templates
+│   ├── base.html        # Base template (extends by others)
+│   ├── login.html       # Authentication page
+│   ├── 403.html         # Forbidden error
+│   └── 404.html         # Not found error
+├── static/
+│   └── css/
+│       └── main.css     # All styles (CSS variables, components)
+└── utils/
+    └── templates.py     # Jinja2Templates instance
+```
+
+### Usage in Routes
+
+```python
+from fastapi import Request
+from app.utils.templates import templates
+
+@router.get("/page")
+async def page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="page.html",
+        context={"title": "Page Title", "data": data},
+    )
+```
+
+### Creating New Templates
+
+1. Create `.html` file in `app/templates/`
+2. Extend base template: `{% extends "base.html" %}`
+3. Override blocks: `{% block title %}`, `{% block content %}`
+4. Use existing CSS classes from `main.css`
+5. Add new styles to `main.css` if needed (never inline)

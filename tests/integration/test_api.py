@@ -133,8 +133,8 @@ class TestAuthRoutes:
         assert COOKIE_NAME in response.cookies
 
     @pytest.mark.asyncio
-    async def test_auth_invalid_key_redirects_to_login_with_error(self, api_client):
-        """POST /auth with invalid key redirects to login with error."""
+    async def test_auth_invalid_key_returns_403(self, api_client):
+        """POST /auth with invalid key returns 403 Forbidden page."""
         client, _ = api_client
 
         response = await client.post(
@@ -143,9 +143,9 @@ class TestAuthRoutes:
             follow_redirects=False,
         )
 
-        assert response.status_code == status.HTTP_302_FOUND
-        assert "/login" in response.headers["location"]
-        assert "error=" in response.headers["location"]
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "403" in response.text
+        assert "Access Forbidden" in response.text
 
     @pytest.mark.asyncio
     async def test_logout_clears_cookie(self, authenticated_client):

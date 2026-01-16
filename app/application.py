@@ -8,6 +8,7 @@ from typing import AsyncGenerator, Callable
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.staticfiles import StaticFiles
 
 from app.api.router import (
     create_auth_router,
@@ -188,6 +189,11 @@ def create_app() -> FastAPI:
     _setup_request_middleware(app)
 
     register_exception_handlers(app)
+
+    # Mount static files (CSS, JS, images)
+    from app.utils.templates import STATIC_DIR
+
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     # Mount auth routes (login, logout) - excluded from cookie auth
     app.include_router(create_auth_router())

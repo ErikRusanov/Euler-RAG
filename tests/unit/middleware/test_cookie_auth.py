@@ -85,6 +85,11 @@ class TestCookieAuthMiddlewarePaths:
         """Logout path is excluded from cookie auth."""
         assert CookieAuthMiddleware.is_excluded_path("/logout") is True
 
+    def test_is_excluded_path_static(self):
+        """Static paths are excluded from cookie auth."""
+        assert CookieAuthMiddleware.is_excluded_path("/static/css/main.css") is True
+        assert CookieAuthMiddleware.is_excluded_path("/static/js/app.js") is True
+
     def test_is_excluded_path_other(self):
         """Other paths are not excluded."""
         assert CookieAuthMiddleware.is_excluded_path("/") is False

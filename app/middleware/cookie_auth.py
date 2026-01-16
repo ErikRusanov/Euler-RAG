@@ -55,6 +55,8 @@ class CookieAuthMiddleware(BaseHTTPMiddleware):
 
     # Paths that don't require cookie authentication
     EXCLUDED_PATHS: set[str] = {"/login", "/auth", "/logout"}
+    # Path prefixes that don't require cookie authentication
+    EXCLUDED_PREFIXES: tuple[str, ...] = ("/static/",)
 
     @classmethod
     def is_excluded_path(cls, path: str) -> bool:
@@ -66,7 +68,9 @@ class CookieAuthMiddleware(BaseHTTPMiddleware):
         Returns:
             True if path should skip cookie auth.
         """
-        return path in cls.EXCLUDED_PATHS
+        if path in cls.EXCLUDED_PATHS:
+            return True
+        return path.startswith(cls.EXCLUDED_PREFIXES)
 
     @classmethod
     def is_public_path(cls, path: str) -> bool:
