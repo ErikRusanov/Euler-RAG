@@ -171,20 +171,27 @@ class BaseService(Generic[T]):
                 f"Database error during get_all: {str(e)}"
             ) from e
 
-    async def find(self, **filters: Any) -> List[T]:
-        """Find records matching the given filters.
+    async def find(
+        self,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        **filters: Any,
+    ) -> List[T]:
+        """Find records matching the given filters with optional pagination.
 
         This is a read operation and does not commit the transaction.
 
         Args:
-            **filters: Field-value pairs to filter by
+            limit: Maximum number of records to return.
+            offset: Number of records to skip.
+            **filters: Field-value pairs to filter by.
 
         Returns:
-            List of matching model instances
+            List of matching model instances.
 
         Raises:
-            InvalidFilterError: If invalid filter key provided
-            DatabaseConnectionError: If database operation fails
+            InvalidFilterError: If invalid filter key provided.
+            DatabaseConnectionError: If database operation fails.
         """
         try:
             query = select(self.model)
@@ -194,6 +201,10 @@ class BaseService(Generic[T]):
                         f"Invalid filter key '{key}' for model {self.model.__name__}"
                     )
                 query = query.where(getattr(self.model, key) == value)
+            if offset:
+                query = query.offset(offset)
+            if limit:
+                query = query.limit(limit)
             result = await self.db.execute(query)
             return list(result.scalars().all())
         except InvalidFilterError:

@@ -53,7 +53,6 @@ class TestAPIKeyMiddleware:
         """Protected endpoints accept valid API key."""
         client, settings = api_client
 
-        # Use GET /api/documents (stub) to avoid S3 dependency
         response = await client.get(
             "/api/documents", headers={"X-API-KEY": settings.api_key}
         )
@@ -65,7 +64,6 @@ class TestAPIKeyMiddleware:
         """API key header is case-insensitive."""
         client, settings = api_client
 
-        # Use GET /api/documents (stub) to avoid S3 dependency
         response = await client.get(
             "/api/documents", headers={"x-api-key": settings.api_key}
         )
@@ -74,18 +72,31 @@ class TestAPIKeyMiddleware:
 
 
 class TestDocumentsAPI:
-    """Tests for documents API endpoints (stubs only)."""
+    """Tests for documents API endpoints."""
 
     @pytest.mark.asyncio
-    async def test_list_documents_stub_response(self, api_client):
-        """GET /api/documents returns stub response."""
+    async def test_list_documents_empty(self, api_client):
+        """GET /api/documents returns empty list when no documents."""
         client, settings = api_client
 
         response = await client.get(
             "/api/documents", headers={"X-API-KEY": settings.api_key}
         )
 
-        assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_list_documents_with_filters_and_pagination(self, api_client):
+        """GET /api/documents accepts filter and pagination query params."""
+        client, settings = api_client
+
+        response = await client.get(
+            "/api/documents?status=ready&subject_id=1&teacher_id=2&limit=10&offset=0",
+            headers={"X-API-KEY": settings.api_key},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
 
     @pytest.mark.asyncio
     async def test_get_document_by_id_not_found(self, api_client):

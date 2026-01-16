@@ -162,6 +162,8 @@ def cleanup_test_database(test_settings: Settings):
 @pytest.fixture
 def app(test_settings: Settings) -> Generator:
     """Create FastAPI application instance for testing."""
+    from app.utils.db import get_db_session
+
     with patch("app.application.init_db", new_callable=AsyncMock) as mock_init_db:
         with patch("app.application.close_db", new_callable=AsyncMock) as mock_close_db:
             with patch("app.application.init_s3") as mock_init_s3:
@@ -176,9 +178,25 @@ def app(test_settings: Settings) -> Generator:
                     s3_manager.storage = mock_s3_storage
 
                     application = create_app()
+
+                    # Override get_db_session with mock session
+                    mock_db_session = MagicMock(spec=AsyncSession)
+                    mock_result = MagicMock()
+                    mock_result.scalars.return_value.all.return_value = []
+                    mock_result.scalar_one_or_none.return_value = None
+                    mock_db_session.execute = AsyncMock(return_value=mock_result)
+
+                    async def override_get_db_session():
+                        yield mock_db_session
+
+                    application.dependency_overrides[get_db_session] = (
+                        override_get_db_session
+                    )
+
                     yield application
 
                     # Cleanup
+                    application.dependency_overrides.clear()
                     s3_manager.storage = None
 
 

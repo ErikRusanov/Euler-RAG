@@ -76,6 +76,22 @@ All mapped to HTTP responses via `app/utils/exception_handlers.py`
 - SQLAlchemy 2.0 style (`Mapped[]`, `mapped_column()`)
 - Pydantic v2 patterns (`model_config`, `field_validator`)
 - pytest-asyncio with `asyncio_mode = "auto"`
+- **Docstrings required** on all functions using Google style:
+  ```python
+  def function_name(arg1: str, arg2: int) -> Result:
+      """Short description.
+
+      Args:
+          arg1: Description of arg1.
+          arg2: Description of arg2.
+
+      Returns:
+          Description of return value.
+
+      Raises:
+          ExceptionType: When this error occurs.
+      """
+  ```
 
 ## Configuration
 

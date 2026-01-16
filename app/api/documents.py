@@ -2,8 +2,8 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, UploadFile
+from fastapi import status as http_status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import DocumentStatus
@@ -22,7 +22,7 @@ router = APIRouter(
 )
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=http_status.HTTP_201_CREATED)
 async def create_document(
     file: UploadFile,
     db: AsyncSession = Depends(get_db_session),
@@ -42,14 +42,39 @@ async def create_document(
     return response
 
 
-@router.get("", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-async def list_documents() -> JSONResponse:
-    """List all documents (stub)."""
-    logger.info("GET /documents called (stub)")
-    return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content={"message": "Not yet implemented", "status": "stub"},
-    )
+@router.get("")
+async def list_documents(
+    status: DocumentStatus | None = None,
+    subject_id: int | None = None,
+    teacher_id: int | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db_session),
+) -> list[DocumentResponse]:
+    """List documents with optional filters and pagination.
+
+    Args:
+        status: Filter by document processing status.
+        subject_id: Filter by subject ID.
+        teacher_id: Filter by teacher ID.
+        limit: Maximum number of documents to return.
+        offset: Number of documents to skip.
+        db: Database session.
+
+    Returns:
+        List of documents matching the filters.
+    """
+    service = DocumentService(db)
+    filters = {}
+    if status is not None:
+        filters["status"] = status
+    if subject_id is not None:
+        filters["subject_id"] = subject_id
+    if teacher_id is not None:
+        filters["teacher_id"] = teacher_id
+
+    documents = await service.find(limit=limit, offset=offset, **filters)
+    return [DocumentResponse.model_validate(doc) for doc in documents]
 
 
 @router.get("/{document_id}")
@@ -122,7 +147,7 @@ async def update_document(
     return DocumentResponse.model_validate(updated_document)
 
 
-@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{document_id}", status_code=http_status.HTTP_204_NO_CONTENT)
 async def delete_document(
     document_id: int,
     db: AsyncSession = Depends(get_db_session),
