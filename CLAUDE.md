@@ -10,6 +10,11 @@ Euler RAG is a FastAPI-based backend for solving mathematical problems using RAG
 
 ## Common Commands
 
+**IMPORTANT**: Always activate the virtual environment before running any Python commands:
+```bash
+source venv/bin/activate
+```
+
 ```bash
 # Development
 make run                # Start PostgreSQL, Redis, and app
@@ -94,6 +99,25 @@ All mapped to HTTP responses via `app/utils/exception_handlers.py`
   ```
 
 ## Testing
+
+### TDD Methodology
+
+**Always follow Test-Driven Development (TDD):**
+
+1. **Write tests first** - Before implementing any feature or fix, write failing tests that define expected behavior
+2. **Run tests to see them fail** - Verify tests fail for the right reason (not due to syntax errors)
+3. **Write minimal code** - Implement just enough code to make tests pass
+4. **Run tests to see them pass** - Verify all tests now pass
+5. **Refactor** - Clean up code while keeping tests green
+
+```bash
+# TDD workflow example
+source venv/bin/activate
+pytest tests/unit/test_new_feature.py -v  # Step 1-2: Write & run failing tests
+# ... implement feature ...
+pytest tests/unit/test_new_feature.py -v  # Step 4: Run tests again
+pytest tests/ -v                           # Step 5: Run all tests after refactoring
+```
 
 ### Test Structure
 

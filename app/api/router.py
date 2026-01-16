@@ -67,6 +67,19 @@ def create_public_router() -> APIRouter:
     return router
 
 
+def create_auth_router() -> APIRouter:
+    """Create router with authentication endpoints.
+
+    These endpoints handle cookie-based browser authentication.
+
+    Returns:
+        APIRouter with auth endpoints (login, logout).
+    """
+    from app.api.auth import router as auth_router
+
+    return auth_router
+
+
 def create_protected_router() -> APIRouter:
     """Create router with protected endpoints (API key required).
 

@@ -9,9 +9,14 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from app.api.router import create_protected_router, create_public_router
+from app.api.router import (
+    create_auth_router,
+    create_protected_router,
+    create_public_router,
+)
 from app.config import Settings, get_settings
 from app.middleware.auth import APIKeyMiddleware
+from app.middleware.cookie_auth import CookieAuthMiddleware
 from app.utils.db import close_db, init_db
 from app.utils.exception_handlers import register_exception_handlers
 from app.utils.redis import close_redis, init_redis
@@ -176,15 +181,19 @@ def create_app() -> FastAPI:
     )
 
     # Setup in order: middleware → exception handlers → routes → openapi
+    # Note: Middleware executes in reverse order (last added runs first)
+    app.add_middleware(CookieAuthMiddleware)
     app.add_middleware(APIKeyMiddleware)
     _setup_cors(app, settings)
     _setup_request_middleware(app)
 
     register_exception_handlers(app)
 
-    # Mount public routes (no auth) at root
+    # Mount auth routes (login, logout) - excluded from cookie auth
+    app.include_router(create_auth_router())
+    # Mount public routes (require cookie auth) at root
     app.include_router(create_public_router())
-    # Mount protected routes (require API key) under /api prefix
+    # Mount protected routes (require API key header) under /api prefix
     app.include_router(create_protected_router())
 
     _setup_openapi(app)
