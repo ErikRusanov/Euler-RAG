@@ -93,6 +93,51 @@ All mapped to HTTP responses via `app/utils/exception_handlers.py`
       """
   ```
 
+## Testing
+
+### Test Structure
+
+- `tests/unit/` - Unit tests with mocked dependencies
+- `tests/integration/` - Integration tests with real DB/Redis/S3
+
+### Writing API Tests
+
+API tests use the `app` fixture which mocks external dependencies. The fixture in `tests/conftest.py` provides:
+- Mocked DB session via `get_db_session` dependency override
+- Mocked S3 storage via `s3_manager.storage`
+
+```python
+@pytest.mark.asyncio
+async def test_endpoint(api_client):
+    """Test description."""
+    client, settings = api_client
+    response = await client.get(
+        "/api/endpoint", headers={"X-API-KEY": settings.api_key}
+    )
+    assert response.status_code == status.HTTP_200_OK
+```
+
+### Writing Service Integration Tests
+
+Service tests use `db_session` fixture for real database access:
+
+```python
+@pytest.mark.asyncio
+async def test_service_operation(db_session: AsyncSession):
+    """Test with real database."""
+    service = MyService(db_session)
+    result = await service.create(name="test")
+    assert result.id is not None
+```
+
+### Test Guidelines
+
+- Keep tests minimal and focused on critical paths
+- Use existing fixtures from `tests/conftest.py`
+- API tests: add to `tests/integration/test_api.py`
+- Service tests: add to `tests/integration/test_services.py`
+- Mock external dependencies, not internal logic
+
 ## Configuration
 
 Copy `.env.template` to `.env`. Key variables:
