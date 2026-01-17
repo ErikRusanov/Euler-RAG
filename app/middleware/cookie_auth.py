@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import logging
 from typing import Callable
+from urllib.parse import quote
 
 from fastapi import Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -101,7 +102,7 @@ class CookieAuthMiddleware(BaseHTTPMiddleware):
                     "has_cookie": bool(session_token),
                 },
             )
-            redirect_url = f"/login?next={path}"
+            redirect_url = f"/login?next={quote(path, safe='')}"
             return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
 
         return await call_next(request)
