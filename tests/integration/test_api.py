@@ -32,41 +32,18 @@ class TestCookieAuthMiddleware:
     """Tests for cookie-based authentication middleware."""
 
     @pytest.mark.asyncio
-    async def test_public_endpoints_redirect_without_cookie(self, api_client):
-        """Public endpoints redirect to login without valid cookie."""
+    async def test_nonexistent_public_path_returns_404(self, api_client):
+        """Non-existent public paths return 404 (no redirect to login)."""
         client, _ = api_client
 
-        response = await client.get("/", follow_redirects=False)
+        # Use Accept: application/json to get JSON response
+        response = await client.get(
+            "/some-nonexistent-page",
+            headers={"Accept": "application/json"},
+            follow_redirects=False,
+        )
 
-        assert response.status_code == status.HTTP_302_FOUND
-        assert response.headers["location"] == "/login?next=/"
-
-    @pytest.mark.asyncio
-    async def test_public_endpoints_accessible_with_cookie(self, authenticated_client):
-        """Public endpoints accessible with valid session cookie."""
-        client, _ = authenticated_client
-
-        response = await client.get("/")
-
-        assert response.status_code == status.HTTP_200_OK
-
-    @pytest.mark.asyncio
-    async def test_health_endpoint_requires_cookie(self, api_client):
-        """Health endpoint requires cookie authentication."""
-        client, _ = api_client
-
-        response = await client.get("/health", follow_redirects=False)
-
-        assert response.status_code == status.HTTP_302_FOUND
-
-    @pytest.mark.asyncio
-    async def test_health_endpoint_accessible_with_cookie(self, authenticated_client):
-        """Health endpoint accessible with valid cookie."""
-        client, _ = authenticated_client
-
-        response = await client.get("/health")
-
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     @pytest.mark.asyncio
     async def test_login_page_accessible_without_cookie(self, api_client):
@@ -77,19 +54,6 @@ class TestCookieAuthMiddleware:
 
         assert response.status_code == status.HTTP_200_OK
         assert "Euler RAG" in response.text
-
-    @pytest.mark.asyncio
-    async def test_invalid_cookie_redirects_to_login(self, app, settings):
-        """Invalid session cookie redirects to login."""
-        transport = ASGITransport(app=app)
-        cookies = {COOKIE_NAME: "invalid-token"}
-        async with AsyncClient(
-            transport=transport, base_url="http://test", cookies=cookies
-        ) as client:
-            response = await client.get("/", follow_redirects=False)
-
-            assert response.status_code == status.HTTP_302_FOUND
-            assert "/login" in response.headers["location"]
 
 
 class TestAuthRoutes:
@@ -250,16 +214,72 @@ class TestDocumentsAPI:
 
 
 class TestHealthEndpoint:
-    """Tests for health check endpoint."""
+    """Tests for health check endpoint under /api (protected)."""
 
     @pytest.mark.asyncio
-    async def test_health_returns_status(self, authenticated_client):
-        """Health endpoint returns healthy status."""
-        client, _ = authenticated_client
+    async def test_health_requires_api_key(self, api_client):
+        """Health endpoint requires API key authentication."""
+        client, _ = api_client
 
-        response = await client.get("/health")
+        response = await client.get("/api/health")
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    @pytest.mark.asyncio
+    async def test_health_returns_status(self, api_client):
+        """Health endpoint returns healthy status with valid API key."""
+        client, settings = api_client
+
+        response = await client.get(
+            "/api/health", headers={"X-API-KEY": settings.api_key}
+        )
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["status"] == "healthy"
-        assert "service" in data
+        assert data["service"] == "euler-rag"
+
+
+class TestNotFoundHandler:
+    """Tests for 404 Not Found handler."""
+
+    @pytest.mark.asyncio
+    async def test_not_found_returns_json_for_api_requests(self, api_client):
+        """404 returns JSON response for API requests."""
+        client, _ = api_client
+
+        response = await client.get(
+            "/nonexistent-path",
+            headers={"Accept": "application/json"},
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        data = response.json()
+        assert data["error"] == "Not Found"
+        assert "message" in data
+
+    @pytest.mark.asyncio
+    async def test_not_found_returns_html_for_browser_requests(self, api_client):
+        """404 returns HTML template for browser requests."""
+        client, _ = api_client
+
+        response = await client.get(
+            "/nonexistent-path",
+            headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9"},
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "text/html" in response.headers["content-type"]
+        assert "404" in response.text
+        assert "Page Not Found" in response.text
+
+    @pytest.mark.asyncio
+    async def test_not_found_defaults_to_json(self, api_client):
+        """404 defaults to JSON when no Accept header."""
+        client, _ = api_client
+
+        response = await client.get("/nonexistent-path")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        data = response.json()
+        assert data["error"] == "Not Found"

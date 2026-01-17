@@ -73,47 +73,33 @@ class TestSessionToken:
 class TestCookieAuthMiddlewarePaths:
     """Tests for CookieAuthMiddleware path classification."""
 
-    def test_is_excluded_path_login(self):
-        """Login path is excluded from cookie auth."""
-        assert CookieAuthMiddleware.is_excluded_path("/login") is True
+    def test_requires_cookie_auth_empty_by_default(self):
+        """No paths require cookie auth by default (empty whitelist)."""
+        assert CookieAuthMiddleware.requires_cookie_auth("/") is False
+        assert CookieAuthMiddleware.requires_cookie_auth("/docs") is False
+        assert CookieAuthMiddleware.requires_cookie_auth("/some-path") is False
+        assert CookieAuthMiddleware.requires_cookie_auth("/api/documents") is False
 
-    def test_is_excluded_path_auth(self):
-        """Auth path is excluded from cookie auth."""
-        assert CookieAuthMiddleware.is_excluded_path("/auth") is True
+    def test_requires_cookie_auth_with_protected_paths(self):
+        """Paths in PROTECTED_PATHS require cookie auth."""
+        original = CookieAuthMiddleware.PROTECTED_PATHS.copy()
+        try:
+            CookieAuthMiddleware.PROTECTED_PATHS.add("/admin")
+            assert CookieAuthMiddleware.requires_cookie_auth("/admin") is True
+            assert CookieAuthMiddleware.requires_cookie_auth("/other") is False
+        finally:
+            CookieAuthMiddleware.PROTECTED_PATHS = original
 
-    def test_is_excluded_path_logout(self):
-        """Logout path is excluded from cookie auth."""
-        assert CookieAuthMiddleware.is_excluded_path("/logout") is True
-
-    def test_is_excluded_path_static(self):
-        """Static paths are excluded from cookie auth."""
-        assert CookieAuthMiddleware.is_excluded_path("/static/css/main.css") is True
-        assert CookieAuthMiddleware.is_excluded_path("/static/js/app.js") is True
-
-    def test_is_excluded_path_other(self):
-        """Other paths are not excluded."""
-        assert CookieAuthMiddleware.is_excluded_path("/") is False
-        assert CookieAuthMiddleware.is_excluded_path("/health") is False
-        assert CookieAuthMiddleware.is_excluded_path("/docs") is False
-
-    def test_is_public_path_root(self):
-        """Root path is public."""
-        assert CookieAuthMiddleware.is_public_path("/") is True
-
-    def test_is_public_path_health(self):
-        """Health paths are public."""
-        assert CookieAuthMiddleware.is_public_path("/health") is True
-        assert CookieAuthMiddleware.is_public_path("/health/db") is True
-
-    def test_is_public_path_docs(self):
-        """Docs paths are public."""
-        assert CookieAuthMiddleware.is_public_path("/docs") is True
-        assert CookieAuthMiddleware.is_public_path("/openapi.json") is True
-
-    def test_is_public_path_api_routes(self):
-        """API routes are not public (they're protected)."""
-        assert CookieAuthMiddleware.is_public_path("/api/documents") is False
-        assert CookieAuthMiddleware.is_public_path("/api/health") is False
+    def test_requires_cookie_auth_with_protected_prefixes(self):
+        """Paths starting with PROTECTED_PREFIXES require cookie auth."""
+        original = CookieAuthMiddleware.PROTECTED_PREFIXES
+        try:
+            CookieAuthMiddleware.PROTECTED_PREFIXES = ("/admin/",)
+            assert CookieAuthMiddleware.requires_cookie_auth("/admin/dashboard") is True
+            assert CookieAuthMiddleware.requires_cookie_auth("/admin/users") is True
+            assert CookieAuthMiddleware.requires_cookie_auth("/other") is False
+        finally:
+            CookieAuthMiddleware.PROTECTED_PREFIXES = original
 
 
 class TestCookieConstants:

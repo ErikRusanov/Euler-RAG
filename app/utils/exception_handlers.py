@@ -4,9 +4,10 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.exceptions import (
     DatabaseConnectionError,
@@ -136,6 +137,42 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
     )
 
 
+async def not_found_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> Response:
+    """Handle 404 Not Found with content negotiation.
+
+    Returns HTML template for browsers, JSON for API clients.
+
+    Args:
+        request: FastAPI request object.
+        exc: HTTP exception.
+
+    Returns:
+        TemplateResponse or JSONResponse based on Accept header.
+    """
+    from app.utils.templates import templates
+
+    logger.warning(f"404 Not Found: {request.url.path}")
+
+    accept_header = request.headers.get("accept", "")
+
+    if "text/html" in accept_header:
+        return templates.TemplateResponse(
+            request=request,
+            name="404.html",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error": "Not Found",
+            "message": f"The requested resource was not found: {request.url.path}",
+        },
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register all exception handlers on the FastAPI application.
 
@@ -148,4 +185,5 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     # Register special handlers
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(404, not_found_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)

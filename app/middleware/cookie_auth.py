@@ -10,7 +10,6 @@ from fastapi.responses import RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import get_settings
-from app.middleware.auth import APIKeyMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -47,57 +46,45 @@ def verify_session_token(token: str, api_key: str) -> bool:
 
 
 class CookieAuthMiddleware(BaseHTTPMiddleware):
-    """Middleware for cookie-based authentication on public routes.
+    """Middleware for cookie-based authentication on protected browser routes.
 
-    Public routes (not under /api) require a valid session cookie.
-    If no valid cookie is present, returns 403 Forbidden.
+    Only paths explicitly listed in PROTECTED_PATHS or matching PROTECTED_PREFIXES
+    require a valid session cookie. If no valid cookie is present, redirects to login.
     """
 
-    # Paths that don't require cookie authentication
-    EXCLUDED_PATHS: set[str] = {"/login", "/auth", "/logout"}
-    # Path prefixes that don't require cookie authentication
-    EXCLUDED_PREFIXES: tuple[str, ...] = ("/static/",)
+    # Paths that require cookie authentication (whitelist)
+    PROTECTED_PATHS: set[str] = set()
+    # Path prefixes that require cookie authentication
+    PROTECTED_PREFIXES: tuple[str, ...] = ()
 
     @classmethod
-    def is_excluded_path(cls, path: str) -> bool:
-        """Check if path is excluded from cookie authentication.
+    def requires_cookie_auth(cls, path: str) -> bool:
+        """Check if path requires cookie authentication.
 
         Args:
             path: Request URL path.
 
         Returns:
-            True if path should skip cookie auth.
+            True if path requires cookie auth.
         """
-        if path in cls.EXCLUDED_PATHS:
+        if path in cls.PROTECTED_PATHS:
             return True
-        return path.startswith(cls.EXCLUDED_PREFIXES)
-
-    @classmethod
-    def is_public_path(cls, path: str) -> bool:
-        """Check if path is a public route (not under /api).
-
-        Args:
-            path: Request URL path.
-
-        Returns:
-            True if path is public and requires cookie auth.
-        """
-        return not APIKeyMiddleware.is_protected_path(path)
+        return path.startswith(cls.PROTECTED_PREFIXES)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Process request and validate session cookie for public routes.
+        """Process request and validate session cookie for protected paths.
 
         Args:
             request: Incoming HTTP request.
             call_next: Next middleware/handler in chain.
 
         Returns:
-            Response from handler or 403 if unauthorized.
+            Response from handler or redirect to login if unauthorized.
         """
         path = request.url.path
 
-        # Skip authentication for excluded paths and protected API routes
-        if self.is_excluded_path(path) or not self.is_public_path(path):
+        # Only require authentication for explicitly protected paths
+        if not self.requires_cookie_auth(path):
             return await call_next(request)
 
         settings = get_settings()
@@ -114,7 +101,6 @@ class CookieAuthMiddleware(BaseHTTPMiddleware):
                     "has_cookie": bool(session_token),
                 },
             )
-            # Store the original URL to redirect after login
             redirect_url = f"/login?next={path}"
             return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
 

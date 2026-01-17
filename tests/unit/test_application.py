@@ -11,7 +11,8 @@ class TestApplication:
         app = create_app()
         routes = [route.path for route in app.routes]
 
-        assert "/" in routes
-        assert "/health" in routes
-        # Documents routes are under /api prefix (protected)
+        # Auth routes
+        assert "/login" in routes
+        # API routes (protected)
+        assert "/api/health" in routes
         assert "/api/documents" in routes
