@@ -1,5 +1,6 @@
 """Authentication routes for cookie-based browser access."""
 
+import hmac
 import logging
 from urllib.parse import urlparse
 
@@ -94,7 +95,7 @@ async def authenticate(
     """
     settings = get_settings()
 
-    if api_key != settings.api_key:
+    if not hmac.compare_digest(api_key, settings.api_key):
         logger.warning("Failed login attempt")
         return templates.TemplateResponse(
             request=request,

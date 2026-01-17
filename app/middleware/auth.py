@@ -1,5 +1,6 @@
 """Authentication middleware for API key validation."""
 
+import hmac
 import logging
 from typing import Callable
 
@@ -42,7 +43,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         api_key = request.headers.get("X-API-KEY") or request.headers.get("x-api-key")
         settings = get_settings()
 
-        if not api_key or api_key != settings.api_key:
+        if not api_key or not hmac.compare_digest(api_key, settings.api_key):
             logger.warning(
                 "Unauthorized request",
                 extra={
