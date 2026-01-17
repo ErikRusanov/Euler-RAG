@@ -54,7 +54,7 @@ class CookieAuthMiddleware(BaseHTTPMiddleware):
     """
 
     # Paths that require cookie authentication (whitelist)
-    PROTECTED_PATHS: set[str] = set()
+    PROTECTED_PATHS: set[str] = {"/docs", "/redoc", "/openapi.json"}
     # Path prefixes that require cookie authentication
     PROTECTED_PREFIXES: tuple[str, ...] = ()
 

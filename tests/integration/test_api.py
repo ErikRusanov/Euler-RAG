@@ -55,6 +55,25 @@ class TestCookieAuthMiddleware:
         assert response.status_code == status.HTTP_200_OK
         assert "Euler RAG" in response.text
 
+    @pytest.mark.asyncio
+    async def test_docs_requires_cookie_auth(self, api_client):
+        """Documentation endpoints require cookie authentication."""
+        client, _ = api_client
+
+        response = await client.get("/docs", follow_redirects=False)
+
+        assert response.status_code == status.HTTP_302_FOUND
+        assert "/login" in response.headers["location"]
+
+    @pytest.mark.asyncio
+    async def test_docs_accessible_with_cookie(self, authenticated_client):
+        """Documentation endpoints accessible with valid session cookie."""
+        client, _ = authenticated_client
+
+        response = await client.get("/docs")
+
+        assert response.status_code == status.HTTP_200_OK
+
 
 class TestAuthRoutes:
     """Tests for authentication routes (login, logout)."""

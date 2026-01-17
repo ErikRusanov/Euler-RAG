@@ -73,22 +73,18 @@ class TestSessionToken:
 class TestCookieAuthMiddlewarePaths:
     """Tests for CookieAuthMiddleware path classification."""
 
-    def test_requires_cookie_auth_empty_by_default(self):
-        """No paths require cookie auth by default (empty whitelist)."""
+    def test_requires_cookie_auth_for_docs(self):
+        """Documentation paths require cookie auth."""
+        assert CookieAuthMiddleware.requires_cookie_auth("/docs") is True
+        assert CookieAuthMiddleware.requires_cookie_auth("/redoc") is True
+        assert CookieAuthMiddleware.requires_cookie_auth("/openapi.json") is True
+
+    def test_requires_cookie_auth_not_for_public_paths(self):
+        """Public paths do not require cookie auth."""
         assert CookieAuthMiddleware.requires_cookie_auth("/") is False
-        assert CookieAuthMiddleware.requires_cookie_auth("/docs") is False
+        assert CookieAuthMiddleware.requires_cookie_auth("/login") is False
         assert CookieAuthMiddleware.requires_cookie_auth("/some-path") is False
         assert CookieAuthMiddleware.requires_cookie_auth("/api/documents") is False
-
-    def test_requires_cookie_auth_with_protected_paths(self):
-        """Paths in PROTECTED_PATHS require cookie auth."""
-        original = CookieAuthMiddleware.PROTECTED_PATHS.copy()
-        try:
-            CookieAuthMiddleware.PROTECTED_PATHS.add("/admin")
-            assert CookieAuthMiddleware.requires_cookie_auth("/admin") is True
-            assert CookieAuthMiddleware.requires_cookie_auth("/other") is False
-        finally:
-            CookieAuthMiddleware.PROTECTED_PATHS = original
 
     def test_requires_cookie_auth_with_protected_prefixes(self):
         """Paths starting with PROTECTED_PREFIXES require cookie auth."""
