@@ -66,13 +66,26 @@ EXCEPTION_CONFIGS: dict[type[Exception], ExceptionConfig] = {
 
 
 def _log_exception(exc: Exception, config: ExceptionConfig) -> None:
-    """Log exception with appropriate level."""
+    """Log exception with appropriate level.
+
+    Args:
+        exc: Exception instance to log.
+        config: Configuration determining log level.
+    """
     log_func: Callable[..., None] = getattr(logger, config.log_level)
     log_func(f"{type(exc).__name__}: {exc}")
 
 
 def _build_response_content(exc: Exception, config: ExceptionConfig) -> dict[str, Any]:
-    """Build response content based on exception type."""
+    """Build response content based on exception type.
+
+    Args:
+        exc: Exception instance to extract details from.
+        config: Configuration for error response.
+
+    Returns:
+        Dictionary with error name, message, and exception-specific attributes.
+    """
     content: dict[str, Any] = {"error": config.error_name}
 
     # Add message based on config and exception type
@@ -100,7 +113,14 @@ def _build_response_content(exc: Exception, config: ExceptionConfig) -> dict[str
 def _create_handler(
     config: ExceptionConfig,
 ) -> Callable[[Request, Exception], JSONResponse]:
-    """Create exception handler function for given config."""
+    """Create exception handler function for given config.
+
+    Args:
+        config: Configuration defining status code, error name, and log level.
+
+    Returns:
+        Async handler function that logs and returns JSON error response.
+    """
 
     async def handler(request: Request, exc: Exception) -> JSONResponse:
         _log_exception(exc, config)
