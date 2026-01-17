@@ -51,6 +51,32 @@ def get_safe_redirect_url(url: str, default: str = "/login") -> str:
     return url if is_safe_redirect_url(url) else default
 
 
+def is_same_origin(request: Request) -> bool:
+    """Check if request Origin/Referer matches the host.
+
+    Provides CSRF protection by verifying requests come from same origin.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        True if request is from same origin, False otherwise.
+    """
+    host = request.headers.get("host", "")
+    origin = request.headers.get("origin", "")
+    referer = request.headers.get("referer", "")
+
+    if origin:
+        parsed = urlparse(origin)
+        return parsed.netloc == host
+
+    if referer:
+        parsed = urlparse(referer)
+        return parsed.netloc == host
+
+    return False
+
+
 router = APIRouter(tags=["auth"])
 
 
@@ -93,6 +119,14 @@ async def authenticate(
     Returns:
         Redirect response to next URL or 403 page if invalid.
     """
+    if not is_same_origin(request):
+        logger.warning("CSRF check failed on /auth")
+        return templates.TemplateResponse(
+            request=request,
+            name="403.html",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
     settings = get_settings()
 
     if not hmac.compare_digest(api_key, settings.api_key):
@@ -125,16 +159,26 @@ async def authenticate(
 
 @router.post("/logout")
 async def logout(
+    request: Request,
     next: str = Query(default="/login", description="URL to redirect after logout"),
-) -> RedirectResponse:
+) -> Response:
     """Clear session cookie and logout.
 
     Args:
+        request: Incoming HTTP request.
         next: URL to redirect to after logout.
 
     Returns:
-        Redirect response with cleared cookie.
+        Redirect response with cleared cookie or 403 if CSRF check fails.
     """
+    if not is_same_origin(request):
+        logger.warning("CSRF check failed on /logout")
+        return templates.TemplateResponse(
+            request=request,
+            name="403.html",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
     safe_next = get_safe_redirect_url(next, default="/login")
     redirect_response = RedirectResponse(
         url=safe_next, status_code=status.HTTP_302_FOUND

@@ -89,6 +89,7 @@ class TestAuthRoutes:
         response = await client.post(
             "/auth",
             data={"api_key": settings.api_key, "next": "/health"},
+            headers={"Origin": "http://test"},
             follow_redirects=False,
         )
 
@@ -104,6 +105,7 @@ class TestAuthRoutes:
         response = await client.post(
             "/auth",
             data={"api_key": "wrong-key", "next": "/"},
+            headers={"Origin": "http://test"},
             follow_redirects=False,
         )
 
@@ -116,7 +118,9 @@ class TestAuthRoutes:
         """POST /logout clears session cookie."""
         client, _ = authenticated_client
 
-        response = await client.post("/logout", follow_redirects=False)
+        response = await client.post(
+            "/logout", headers={"Origin": "http://test"}, follow_redirects=False
+        )
 
         assert response.status_code == status.HTTP_302_FOUND
         # Cookie should be deleted (set to empty or with max-age=0)
@@ -130,6 +134,7 @@ class TestAuthRoutes:
         response = await client.post(
             "/auth",
             data={"api_key": settings.api_key, "next": "https://evil.com/phish"},
+            headers={"Origin": "http://test"},
             follow_redirects=False,
         )
 
@@ -142,11 +147,35 @@ class TestAuthRoutes:
         client, _ = authenticated_client
 
         response = await client.post(
-            "/logout?next=https://evil.com", follow_redirects=False
+            "/logout?next=https://evil.com",
+            headers={"Origin": "http://test"},
+            follow_redirects=False,
         )
 
         assert response.status_code == status.HTTP_302_FOUND
         assert response.headers["location"] == "/login"
+
+    @pytest.mark.asyncio
+    async def test_auth_rejects_csrf_attack(self, api_client):
+        """POST /auth without Origin header returns 403."""
+        client, settings = api_client
+
+        response = await client.post(
+            "/auth",
+            data={"api_key": settings.api_key, "next": "/"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @pytest.mark.asyncio
+    async def test_logout_rejects_csrf_attack(self, authenticated_client):
+        """POST /logout without Origin header returns 403."""
+        client, _ = authenticated_client
+
+        response = await client.post("/logout", follow_redirects=False)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 class TestAPIKeyMiddleware:
