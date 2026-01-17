@@ -122,6 +122,32 @@ class TestAuthRoutes:
         # Cookie should be deleted (set to empty or with max-age=0)
         assert COOKIE_NAME in response.headers.get("set-cookie", "")
 
+    @pytest.mark.asyncio
+    async def test_auth_rejects_external_redirect_url(self, api_client):
+        """POST /auth rejects external URLs in next parameter."""
+        client, settings = api_client
+
+        response = await client.post(
+            "/auth",
+            data={"api_key": settings.api_key, "next": "https://evil.com/phish"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_302_FOUND
+        assert response.headers["location"] == "/login"
+
+    @pytest.mark.asyncio
+    async def test_logout_rejects_external_redirect_url(self, authenticated_client):
+        """POST /logout rejects external URLs in next parameter."""
+        client, _ = authenticated_client
+
+        response = await client.post(
+            "/logout?next=https://evil.com", follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_302_FOUND
+        assert response.headers["location"] == "/login"
+
 
 class TestAPIKeyMiddleware:
     """Tests for API key authentication middleware."""
