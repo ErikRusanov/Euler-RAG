@@ -13,41 +13,14 @@ from app.models.document import DocumentStatus
 from app.services.document_service import DocumentService
 from app.services.subject_service import SubjectService
 from app.services.teacher_service import TeacherService
+from app.utils.api_helpers import get_pagination_context, get_progress_tracker
 from app.utils.db import get_db_session
-from app.utils.redis import get_redis_client
 from app.utils.templates import templates
 from app.workers.progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["admin"])
-
-
-def get_pagination_context(page: int, page_size: int, total: int) -> dict:
-    """Calculate pagination metadata.
-
-    Args:
-        page: Current page number (1-indexed).
-        page_size: Items per page.
-        total: Total number of items.
-
-    Returns:
-        Dictionary with pagination metadata.
-    """
-    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
-    start = (page - 1) * page_size + 1 if total > 0 else 0
-    end = min(page * page_size, total)
-
-    return {
-        "page": page,
-        "page_size": page_size,
-        "total": total,
-        "total_pages": total_pages,
-        "start": start,
-        "end": end,
-        "has_prev": page > 1,
-        "has_next": page < total_pages,
-    }
 
 
 @router.get("/admin/documents")
@@ -184,16 +157,6 @@ async def admin_root() -> RedirectResponse:
         Redirect response to documents tab.
     """
     return RedirectResponse(url="/admin/documents", status_code=status.HTTP_302_FOUND)
-
-
-def get_progress_tracker() -> ProgressTracker:
-    """Get ProgressTracker instance for dependency injection.
-
-    Returns:
-        ProgressTracker instance with Redis client.
-    """
-    redis = get_redis_client()
-    return ProgressTracker(redis)
 
 
 @router.get("/admin/api/documents/{document_id}/progress")

@@ -2,79 +2,16 @@
 
 import hmac
 import logging
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Form, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 
 from app.config import get_settings
 from app.middleware.cookie_auth import COOKIE_NAME, generate_session_token
+from app.utils.api_helpers import get_safe_redirect_url, is_same_origin
 from app.utils.templates import templates
 
 logger = logging.getLogger(__name__)
-
-
-def is_safe_redirect_url(url: str) -> bool:
-    """Check if redirect URL is safe (internal path only).
-
-    Prevents open redirect vulnerabilities by rejecting absolute URLs
-    and external domains.
-
-    Args:
-        url: URL to validate.
-
-    Returns:
-        True if URL is a safe internal path, False otherwise.
-    """
-    if not url:
-        return False
-    parsed = urlparse(url)
-    if parsed.scheme or parsed.netloc:
-        return False
-    if not url.startswith("/"):
-        return False
-    if url.startswith("//"):
-        return False
-    return True
-
-
-def get_safe_redirect_url(url: str, default: str = "/login") -> str:
-    """Get a safe redirect URL, falling back to default if unsafe.
-
-    Args:
-        url: URL to validate and return.
-        default: Default URL to use if provided URL is unsafe.
-
-    Returns:
-        Safe redirect URL.
-    """
-    return url if is_safe_redirect_url(url) else default
-
-
-def is_same_origin(request: Request) -> bool:
-    """Check if request Origin/Referer matches the host.
-
-    Provides CSRF protection by verifying requests come from same origin.
-
-    Args:
-        request: Incoming HTTP request.
-
-    Returns:
-        True if request is from same origin, False otherwise.
-    """
-    host = request.headers.get("host", "")
-    origin = request.headers.get("origin", "")
-    referer = request.headers.get("referer", "")
-
-    if origin:
-        parsed = urlparse(origin)
-        return parsed.netloc == host
-
-    if referer:
-        parsed = urlparse(referer)
-        return parsed.netloc == host
-
-    return False
 
 
 router = APIRouter(tags=["auth"])

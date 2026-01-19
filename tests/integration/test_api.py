@@ -403,7 +403,7 @@ def progress_tracker(redis_client: Redis) -> ProgressTracker:
 @pytest.fixture
 def app_with_redis(app, redis_client: Redis):
     """App fixture with Redis dependency override."""
-    from app.api.admin import get_progress_tracker
+    from app.utils.api_helpers import get_progress_tracker
     from app.workers.progress import ProgressTracker
 
     # Override get_progress_tracker to use real Redis
