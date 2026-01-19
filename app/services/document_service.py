@@ -83,7 +83,9 @@ class DocumentService(BaseService[Document]):
             )
             raise InvalidFileTypeError(ALLOWED_CONTENT_TYPES, content_type)
 
-        s3_key = s3.upload_file(file_data, filename, folder=PDF_FOLDER)
+        s3_key = s3.upload_file(
+            file_data, filename, folder=PDF_FOLDER, content_type=content_type
+        )
         document = await self.create(filename=filename, s3_key=s3_key)
 
         logger.info(

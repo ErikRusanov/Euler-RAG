@@ -95,6 +95,41 @@ class TestS3Storage:
 
         assert result == "documents/abc123__document.pdf"
         s3_storage._client.put_object.assert_called_once()
+        # Verify put_object was called with correct parameters
+        call_args = s3_storage._client.put_object.call_args
+        assert call_args[1]["Bucket"] == "test-bucket"
+        assert call_args[1]["Key"] == "documents/abc123__document.pdf"
+        assert "ContentType" in call_args[1]
+
+    def test_upload_file_pdf_sets_metadata(self, s3_storage):
+        """Upload PDF file sets correct Content-Type and Content-Disposition."""
+        file_data = BytesIO(b"PDF content")
+
+        with patch.object(s3_storage, "_generate_unique_name") as mock_gen:
+            mock_gen.return_value = "abc123__document.pdf"
+            result = s3_storage.upload_file(
+                file_data, "document.pdf", "documents", content_type="application/pdf"
+            )
+
+        assert result == "documents/abc123__document.pdf"
+        call_args = s3_storage._client.put_object.call_args
+        assert call_args[1]["ContentType"] == "application/pdf"
+        assert call_args[1]["ContentDisposition"] == 'inline; filename="document.pdf"'
+
+    def test_upload_file_non_pdf_no_disposition(self, s3_storage):
+        """Upload non-PDF file doesn't set Content-Disposition."""
+        file_data = BytesIO(b"Text content")
+
+        with patch.object(s3_storage, "_generate_unique_name") as mock_gen:
+            mock_gen.return_value = "abc123__document.txt"
+            result = s3_storage.upload_file(
+                file_data, "document.txt", "documents", content_type="text/plain"
+            )
+
+        assert result == "documents/abc123__document.txt"
+        call_args = s3_storage._client.put_object.call_args
+        assert call_args[1]["ContentType"] == "text/plain"
+        assert "ContentDisposition" not in call_args[1]
 
     def test_upload_file_exceeds_size_limit(self, s3_storage):
         """Upload raises error when file exceeds 200MB limit."""

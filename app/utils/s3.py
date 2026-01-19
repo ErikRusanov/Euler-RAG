@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import mimetypes
 from datetime import UTC, datetime
 from typing import BinaryIO, Optional
 
@@ -84,18 +85,62 @@ class S3Storage:
             return filename
         return f"{folder}/{filename}"
 
+    def _get_content_type(
+        self, filename: str, content_type: Optional[str] = None
+    ) -> str:
+        """Determine Content-Type for file.
+
+        Args:
+            filename: Filename with extension.
+            content_type: Optional explicit content type.
+
+        Returns:
+            MIME type string (defaults to application/octet-stream).
+        """
+        if content_type:
+            return content_type
+
+        # Try to guess from extension
+        guessed_type, _ = mimetypes.guess_type(filename)
+        if guessed_type:
+            return guessed_type
+
+        return "application/octet-stream"
+
+    def _get_content_disposition(
+        self, filename: str, content_type: str
+    ) -> Optional[str]:
+        """Generate Content-Disposition header for file.
+
+        For PDF files, returns 'inline' to allow browser viewing.
+        For other files, returns None (browser will decide).
+
+        Args:
+            filename: Original filename.
+            content_type: File MIME type.
+
+        Returns:
+            Content-Disposition header value or None.
+        """
+        if content_type == "application/pdf":
+            return f'inline; filename="{filename}"'
+        return None
+
     def upload_file(
         self,
         file_data: BinaryIO,
         original_name: str,
         folder: str = "",
+        content_type: Optional[str] = None,
     ) -> str:
-        """Upload file to S3 storage.
+        """Upload file to S3 storage with proper metadata.
 
         Args:
             file_data: File-like object with binary data.
             original_name: Original filename with extension.
             folder: Optional folder prefix.
+            content_type: Optional explicit MIME type
+                (guessed from extension if not provided).
 
         Returns:
             S3 key of uploaded file.
@@ -116,15 +161,31 @@ class S3Storage:
         unique_name = self._generate_unique_name(original_name)
         key = self._create_key(unique_name, folder)
 
+        # Determine content type and disposition
+        mime_type = self._get_content_type(original_name, content_type)
+        content_disposition = self._get_content_disposition(original_name, mime_type)
+
+        # Build metadata for put_object
+        put_params = {
+            "Bucket": self._bucket_name,
+            "Key": key,
+            "Body": file_data,
+            "ContentType": mime_type,
+        }
+
+        if content_disposition:
+            put_params["ContentDisposition"] = content_disposition
+
         try:
-            self._client.put_object(
-                Bucket=self._bucket_name,
-                Key=key,
-                Body=file_data,
-            )
+            self._client.put_object(**put_params)
             logger.info(
                 "File uploaded to S3",
-                extra={"key": key, "size": file_size},
+                extra={
+                    "key": key,
+                    "size": file_size,
+                    "content_type": mime_type,
+                    "content_disposition": content_disposition,
+                },
             )
             return key
         except ClientError as e:
