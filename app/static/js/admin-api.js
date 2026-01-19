@@ -109,11 +109,22 @@ async function startProcessing(documentId) {
 
 /**
  * Reload the documents table by making a GET request to the current page.
- * Preserves query parameters.
+ * @param {Object} queryParams - Optional query parameters to include in the request.
  */
-function reloadDocumentsTable() {
+function reloadDocumentsTable(queryParams = null) {
     const url = new URL(window.location.href);
     url.pathname = '/admin/documents';
+
+    // If queryParams provided, use them; otherwise preserve current query params
+    if (queryParams) {
+        // Clear existing params and set new ones
+        url.search = '';
+        Object.entries(queryParams).forEach(([key, value]) => {
+            if (value !== null && value !== undefined && value !== '') {
+                url.searchParams.set(key, value);
+            }
+        });
+    }
 
     fetch(url.toString())
         .then(response => {
@@ -130,6 +141,8 @@ function reloadDocumentsTable() {
 
             if (newContent && currentContent) {
                 currentContent.outerHTML = newContent.outerHTML;
+                // Re-initialize filter event listeners after content update
+                initializeFilterHandlers();
             } else {
                 window.location.reload();
             }
@@ -138,6 +151,59 @@ function reloadDocumentsTable() {
             console.error('Failed to reload documents table:', error);
             window.location.reload();
         });
+}
+
+/**
+ * Handle filter changes and reload table with new filter values.
+ * This is a fallback for when HTMX doesn't work.
+ */
+function handleFilterChange() {
+    const statusSelect = document.getElementById('status');
+    const subjectSelect = document.getElementById('subject_id');
+    const teacherSelect = document.getElementById('teacher_id');
+    const pageSizeSelect = document.getElementById('page_size');
+
+    const queryParams = {};
+
+    if (statusSelect && statusSelect.value) {
+        queryParams.status = statusSelect.value;
+    }
+    if (subjectSelect && subjectSelect.value) {
+        queryParams.subject_id = subjectSelect.value;
+    }
+    if (teacherSelect && teacherSelect.value) {
+        queryParams.teacher_id = teacherSelect.value;
+    }
+    if (pageSizeSelect && pageSizeSelect.value) {
+        queryParams.page_size = pageSizeSelect.value;
+    }
+
+    reloadDocumentsTable(queryParams);
+}
+
+/**
+ * Initialize filter change handlers as fallback for HTMX.
+ * Uses event delegation to avoid issues with element replacement.
+ */
+function initializeFilterHandlers() {
+    // Use event delegation on document to handle filter changes
+    // This works even if filter elements are replaced
+    const handler = function(event) {
+        const target = event.target;
+        // Only handle changes on filter selects
+        if (target && target.matches && target.matches('#status, #subject_id, #teacher_id, #page_size')) {
+            handleFilterChange();
+        }
+    };
+
+    // Remove existing listener if any
+    if (document._filterChangeHandler) {
+        document.removeEventListener('change', document._filterChangeHandler);
+    }
+
+    // Store handler reference and add listener
+    document._filterChangeHandler = handler;
+    document.addEventListener('change', handler, true); // Use capture phase to catch all changes
 }
 
 /**
@@ -324,6 +390,106 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+/**
+ * Show loading overlay during file upload.
+ */
+function showLoadingOverlay() {
+    const overlay = document.getElementById('upload-loading-overlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+    }
+}
+
+/**
+ * Hide loading overlay after file upload completes.
+ */
+function hideLoadingOverlay() {
+    const overlay = document.getElementById('upload-loading-overlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+}
+
+/**
+ * Upload a document file to the server.
+ * @param {File} file - File to upload.
+ * @returns {Promise<Object>} Uploaded document data.
+ */
+async function uploadDocument(file) {
+    const apiKey = getApiKey();
+    if (!apiKey) {
+        throw new Error('API key not found in cookies. Please log in again.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('/api/documents', {
+        method: 'POST',
+        headers: {
+            'X-API-KEY': apiKey,
+        },
+        body: formData,
+    });
+
+    if (!response.ok) {
+        let errorData;
+        try {
+            const text = await response.text();
+            errorData = text ? JSON.parse(text) : { error: 'Unknown error' };
+        } catch {
+            errorData = { error: 'Unknown error' };
+        }
+        throw new Error(errorData.message || errorData.error || `HTTP ${response.status}`);
+    }
+
+    return await response.json();
+}
+
+/**
+ * Handle file upload when file is selected.
+ * @param {Event} event - File input change event.
+ */
+async function handleFileUpload(event) {
+    const fileInput = event.target;
+    const file = fileInput.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    // Validate file type
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        alert('Please select a PDF file.');
+        fileInput.value = '';
+        return;
+    }
+
+    try {
+        showLoadingOverlay();
+        await uploadDocument(file);
+        // Reset file input
+        fileInput.value = '';
+        // Reload table to show new document
+        reloadDocumentsTable();
+    } catch (error) {
+        console.error('Upload error:', error);
+        alert(`Failed to upload document: ${error.message}`);
+    } finally {
+        hideLoadingOverlay();
+    }
+}
+
+/**
+ * Initialize file upload handler.
+ */
+function initializeFileUpload() {
+    const fileInput = document.getElementById('document-upload-input');
+    if (fileInput) {
+        fileInput.addEventListener('change', handleFileUpload);
+    }
+}
+
 // Export functions for use in other scripts
 window.AdminAPI = {
     getCookie,
@@ -338,9 +504,28 @@ window.AdminAPI = {
     deleteDocumentWithConfirm,
     startDocumentProcessing,
     showDocumentModal,
+    handleFilterChange,
+    initializeFilterHandlers,
+    uploadDocument,
+    showLoadingOverlay,
+    hideLoadingOverlay,
+    handleFileUpload,
+    initializeFileUpload,
 };
 
 // Global functions for onclick handlers
 window.viewDocument = viewDocument;
 window.deleteDocument = deleteDocumentWithConfirm;
 window.startDocumentProcessing = startDocumentProcessing;
+
+// Initialize handlers when DOM is ready
+function initializeAllHandlers() {
+    initializeFilterHandlers();
+    initializeFileUpload();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeAllHandlers);
+} else {
+    initializeAllHandlers();
+}

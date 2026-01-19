@@ -40,4 +40,22 @@
         {% include "admin/components/empty_state.html" %}
     {% endif %}
 </div>
+
+<!-- Hidden file input for document upload -->
+<input type="file" id="document-upload-input" accept=".pdf" style="display: none;">
+
+<!-- Floating Action Button for uploading documents -->
+<button id="upload-fab" class="fab-button" onclick="document.getElementById('document-upload-input').click();" title="Upload Document">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+    </svg>
+</button>
+
+<!-- Loading Overlay -->
+<div id="upload-loading-overlay" class="upload-loading-overlay" style="display: none;">
+    <div class="upload-loading-spinner">
+        <div class="spinner"></div>
+        <p class="upload-loading-text">Uploading file...</p>
+    </div>
+</div>
 {% endblock %}
