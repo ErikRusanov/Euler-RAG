@@ -12,15 +12,28 @@ logger = logging.getLogger(__name__)
 
 
 def create_public_router() -> APIRouter:
-    """Create router with public endpoints (no auth required).
+    """Create router with public endpoints (require cookie auth).
 
-    NOTE: This router is currently empty. All endpoints now require
-    authentication via API key or session cookie.
+    Includes admin panel routes and root redirect.
 
     Returns:
-        Empty APIRouter for future public endpoints.
+        APIRouter with admin routes.
     """
+    from fastapi.responses import RedirectResponse
+
+    from app.api.admin import router as admin_router
+
     router = APIRouter()
+
+    # Root redirect to admin panel
+    @router.get("/")
+    async def root():
+        """Redirect root to admin panel."""
+        return RedirectResponse(url="/admin", status_code=302)
+
+    # Include admin routes
+    router.include_router(admin_router)
+
     return router
 
 
