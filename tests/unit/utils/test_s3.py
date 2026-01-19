@@ -159,16 +159,6 @@ class TestS3Storage:
         # get_file_url returns a direct URL without signature
         assert result == "http://localhost:9000/test-bucket/documents/doc.pdf"
 
-    def test_get_presigned_url_success(self, s3_storage):
-        """Get presigned URL returns URL with signature."""
-        expected_url = "http://localhost:9000/test-bucket/documents/doc.pdf?sig=xxx"
-        s3_storage._client.generate_presigned_url.return_value = expected_url
-
-        result = s3_storage.get_presigned_url("documents/doc.pdf")
-
-        assert result == expected_url
-        s3_storage._client.generate_presigned_url.assert_called_once()
-
     def test_delete_file_success(self, s3_storage):
         """Delete calls delete_object."""
         s3_storage.delete_file("documents/abc123__document.pdf")

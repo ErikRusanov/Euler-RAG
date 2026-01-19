@@ -203,30 +203,6 @@ class S3Storage:
         """
         return f"{self._endpoint_url}/{self._bucket_name}/{key}"
 
-    def get_presigned_url(self, key: str, expires_in: int = 3600) -> str:
-        """Get presigned URL for file with expiration.
-
-        Args:
-            key: S3 key of the file.
-            expires_in: URL expiration time in seconds (default: 1 hour).
-
-        Returns:
-            Presigned URL for file access.
-
-        Raises:
-            S3OperationError: If URL generation fails.
-        """
-        try:
-            url = self._client.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": self._bucket_name, "Key": key},
-                ExpiresIn=expires_in,
-            )
-            return url
-        except ClientError as e:
-            logger.error(f"Failed to generate presigned URL: {e}")
-            raise S3OperationError(f"Failed to get file URL: {e}") from e
-
     def download_file(self, key: str) -> bytes:
         """Download file from S3 storage.
 

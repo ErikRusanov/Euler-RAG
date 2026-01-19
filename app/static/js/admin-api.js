@@ -127,16 +127,15 @@ function reloadDocumentsTable() {
             const doc = parser.parseFromString(html, 'text/html');
             const newContent = doc.getElementById('documents-content');
             const currentContent = document.getElementById('documents-content');
+
             if (newContent && currentContent) {
                 currentContent.outerHTML = newContent.outerHTML;
             } else {
-                // Fallback to full page reload if content not found
                 window.location.reload();
             }
         })
         .catch(error => {
             console.error('Failed to reload documents table:', error);
-            // Fallback to full page reload
             window.location.reload();
         });
 }
@@ -179,7 +178,7 @@ async function deleteDocumentWithConfirm(documentId, button) {
         console.log(`Deleting document ${documentId}...`);
         await deleteDocumentApi(documentId);
         console.log(`Document ${documentId} deleted successfully`);
-        window.location.reload();
+        reloadDocumentsTable();
     } catch (error) {
         console.error('Delete error:', error);
         alert(`Failed to delete document: ${error.message}`);
@@ -305,26 +304,12 @@ function showDocumentModal(docData) {
     `;
 
     // Insert modal into body (wait for DOM if needed)
-    const insertModal = () => {
-        const body = document.body;
-        if (body && typeof body.insertAdjacentHTML === 'function') {
-            body.insertAdjacentHTML('beforeend', modalHTML);
-        } else {
-            // Wait for DOM to be ready
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', insertModal);
-            } else {
-                // Fallback: try again after a short delay
-                setTimeout(insertModal, 100);
-            }
-        }
-    };
-
-    // Ensure DOM is ready before inserting
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        insertModal();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+        });
     } else {
-        document.addEventListener('DOMContentLoaded', insertModal);
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
     }
 }
 

@@ -91,7 +91,7 @@ async def get_document(
         s3: S3 storage instance.
 
     Returns:
-        Document details with presigned download URL.
+        Document details with direct file URL.
 
     Raises:
         RecordNotFoundError: If document with given ID does not exist.
