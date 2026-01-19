@@ -15,6 +15,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    width: 100%;
 }
 
 .admin-title {
@@ -41,6 +42,7 @@
     padding: 0 2rem;
     display: flex;
     gap: 0.5rem;
+    width: 100%;
 }
 
 .admin-tab {
@@ -117,6 +119,11 @@
     font-family: inherit;
     cursor: pointer;
     transition: border-color 0.2s;
+}
+
+.custom-select select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
 }
 
 .custom-select select:hover {

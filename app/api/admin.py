@@ -13,8 +13,10 @@ from app.services.document_service import DocumentService
 from app.services.subject_service import SubjectService
 from app.services.teacher_service import TeacherService
 from app.utils.db import get_db_session
+from app.utils.redis import get_redis_client
 from app.utils.s3 import S3Storage, get_s3_storage
 from app.utils.templates import templates
+from app.workers.queue import TaskQueue, TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +121,32 @@ async def admin_documents(
     )
 
 
+@router.get("/admin/documents/{document_id}/download")
+async def download_document_pdf(
+    document_id: int,
+    db: AsyncSession = Depends(get_db_session),
+    s3: S3Storage = Depends(get_s3_storage),
+) -> RedirectResponse:
+    """Get presigned URL and redirect to PDF file.
+
+    Args:
+        document_id: Document ID to download.
+        db: Database session.
+        s3: S3 storage instance.
+
+    Returns:
+        Redirect to presigned S3 URL.
+    """
+    document_service = DocumentService(db)
+
+    try:
+        document = await document_service.get_by_id_or_fail(document_id)
+        presigned_url = s3.get_file_url(document.s3_key)
+        return RedirectResponse(url=presigned_url)
+    except RecordNotFoundError:
+        return RedirectResponse(url="/404", status_code=status.HTTP_404_NOT_FOUND)
+
+
 @router.get("/admin/documents/{document_id}/view")
 async def view_document_modal(
     request: Request,
@@ -169,6 +197,11 @@ async def delete_document(
     document_id: int,
     db: AsyncSession = Depends(get_db_session),
     s3: S3Storage = Depends(get_s3_storage),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=10, le=100),
+    status_filter: Optional[str] = Query(default=None, alias="status"),
+    subject_id: Optional[int] = Query(default=None),
+    teacher_id: Optional[int] = Query(default=None),
 ) -> Response:
     """Delete a document and its file from S3.
 
@@ -177,6 +210,11 @@ async def delete_document(
         document_id: Document ID to delete.
         db: Database session.
         s3: S3 storage instance.
+        page: Current page number.
+        page_size: Number of items per page.
+        status_filter: Filter by document status.
+        subject_id: Filter by subject ID.
+        teacher_id: Filter by teacher ID.
 
     Returns:
         Redirect to documents list or error.
@@ -194,7 +232,9 @@ async def delete_document(
         )
 
     # Return full documents content for HTMX swap
-    return await admin_documents(request, db)
+    return await admin_documents(
+        request, db, page, page_size, status_filter, subject_id, teacher_id
+    )
 
 
 @router.post("/admin/documents/{document_id}/start")
@@ -202,6 +242,11 @@ async def start_processing(
     request: Request,
     document_id: int,
     db: AsyncSession = Depends(get_db_session),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=10, le=100),
+    status_filter: Optional[str] = Query(default=None, alias="status"),
+    subject_id: Optional[int] = Query(default=None),
+    teacher_id: Optional[int] = Query(default=None),
 ) -> Response:
     """Update document status to PENDING to start processing.
 
@@ -209,6 +254,11 @@ async def start_processing(
         request: FastAPI request object.
         document_id: Document ID to start processing.
         db: Database session.
+        page: Current page number.
+        page_size: Number of items per page.
+        status_filter: Filter by document status.
+        subject_id: Filter by subject ID.
+        teacher_id: Filter by teacher ID.
 
     Returns:
         Redirect to documents list or error.
@@ -216,10 +266,23 @@ async def start_processing(
     document_service = DocumentService(db)
 
     try:
+        # Update document status to PENDING
         await document_service.update_document(
             document_id, status=DocumentStatus.PENDING
         )
         logger.info(f"Document {document_id} processing started via admin panel")
+
+        # Enqueue task for processing
+        try:
+            queue = TaskQueue(get_redis_client())
+            await queue.enqueue(TaskType.DOCUMENT_PROCESS, {"document_id": document_id})
+            logger.info(f"Document {document_id} enqueued for processing")
+        except Exception as e:
+            logger.error(
+                "Failed to enqueue document processing task",
+                extra={"document_id": document_id, "error": str(e)},
+                exc_info=True,
+            )
     except RecordNotFoundError:
         return templates.TemplateResponse(
             request=request,
@@ -228,7 +291,9 @@ async def start_processing(
         )
 
     # Return full documents content for HTMX swap
-    return await admin_documents(request, db)
+    return await admin_documents(
+        request, db, page, page_size, status_filter, subject_id, teacher_id
+    )
 
 
 @router.get("/admin/teachers")

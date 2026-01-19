@@ -1,19 +1,18 @@
 {% extends "admin/layout.html" %}
 
 {% block admin_content %}
-<div id="documents-content">
-    {% include "admin/components/filters.html" %}
+{% include "admin/components/filters.html" %}
 
+<div id="documents-content">
     {% if documents %}
         {% include "admin/components/document_table.html" %}
         {% include "admin/components/pagination.html" %}
     {% else %}
-        {% include "admin/components/empty_state.html" with
-            title="No documents found",
-            message="No documents match your current filters. Try adjusting your search criteria or upload a new document.",
-            cta_text="",
-            cta_url=""
-        %}
+        {% set title = "No documents found" %}
+        {% set message = "No documents match your current filters. Try adjusting your search criteria or upload a new document." %}
+        {% set cta_text = "" %}
+        {% set cta_url = "" %}
+        {% include "admin/components/empty_state.html" %}
     {% endif %}
 </div>
 {% endblock %}
