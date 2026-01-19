@@ -144,12 +144,22 @@ async def authenticate(
     redirect_response = RedirectResponse(
         url=safe_next, status_code=status.HTTP_302_FOUND
     )
+    # Set session token cookie (httpOnly for security)
     redirect_response.set_cookie(
         key=COOKIE_NAME,
         value=session_token,
         httponly=True,
         secure=not settings.is_development,
         samesite="lax",
+        max_age=86400 * 7,  # 7 days
+    )
+    # Set API key cookie (accessible to JavaScript for API requests)
+    redirect_response.set_cookie(
+        key="euler_api_key",
+        value=api_key,
+        httponly=False,  # Must be accessible to JavaScript
+        secure=not settings.is_development,
+        samesite="strict",  # Strict SameSite for CSRF protection
         max_age=86400 * 7,  # 7 days
     )
 
@@ -184,5 +194,6 @@ async def logout(
         url=safe_next, status_code=status.HTTP_302_FOUND
     )
     redirect_response.delete_cookie(key=COOKIE_NAME)
+    redirect_response.delete_cookie(key="euler_api_key")
     logger.info("User logged out")
     return redirect_response
