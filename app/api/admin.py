@@ -162,12 +162,14 @@ async def admin_root() -> RedirectResponse:
 @router.get("/admin/api/documents/{document_id}/progress")
 async def stream_document_progress(
     document_id: int,
+    db: AsyncSession = Depends(get_db_session),
     progress_tracker: ProgressTracker = Depends(get_progress_tracker),
 ) -> StreamingResponse:
     """Stream document processing progress via Server-Sent Events.
 
     Args:
         document_id: Document ID to track progress for.
+        db: Database session.
         progress_tracker: ProgressTracker instance.
 
     Returns:
@@ -175,6 +177,27 @@ async def stream_document_progress(
     """
 
     async def event_generator():
+        # Check document status from database
+        # If document is already processing, send status update immediately
+        document_service = DocumentService(db)
+        try:
+            document = await document_service.get_by_id(document_id)
+            if document and document.status == DocumentStatus.PROCESSING:
+                # Send status update to change UI from "pending" to "processing"
+                status_update = {
+                    "document_id": document_id,
+                    "status": "processing",
+                    "page": 0,
+                    "total": 0,
+                    "message": "Processing started",
+                }
+                yield f"data: {json.dumps(status_update)}\n\n"
+        except Exception as e:
+            logger.warning(
+                f"Failed to check document status for {document_id}: {e}",
+                exc_info=True,
+            )
+
         # Send current progress if available
         current = await progress_tracker.get(document_id)
         if current:

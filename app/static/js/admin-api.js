@@ -520,8 +520,10 @@ function startProgressTracking(documentId) {
             const data = JSON.parse(event.data);
             updateProgressBar(documentId, data.page, data.total);
 
-            // Update status if ready
-            if (data.status === 'ready') {
+            // Update status if processing or ready
+            if (data.status === 'processing') {
+                updateDocumentStatus(documentId, 'processing');
+            } else if (data.status === 'ready') {
                 updateDocumentStatus(documentId, 'ready');
                 stopProgressTracking(documentId);
             }
@@ -618,18 +620,18 @@ function updateDocumentStatus(documentId, status) {
     const viewButton = row.querySelector('button[data-button-type="view"]');
     const deleteButton = row.querySelector('button[data-button-type="delete"]');
 
-    if (status === 'pending') {
-        // Disable buttons for pending status
+    if (status === 'pending' || status === 'processing') {
+        // Disable buttons for pending/processing status
         if (viewButton) {
             viewButton.disabled = true;
             viewButton.classList.add('icon-btn-disabled');
-            viewButton.title = 'View not available (pending)';
+            viewButton.title = `View not available (${status})`;
             viewButton.removeAttribute('onclick');
         }
         if (deleteButton) {
             deleteButton.disabled = true;
             deleteButton.classList.add('icon-btn-disabled');
-            deleteButton.title = 'Delete not available (pending)';
+            deleteButton.title = `Delete not available (${status})`;
             deleteButton.removeAttribute('onclick');
         }
     } else {
