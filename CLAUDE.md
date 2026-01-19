@@ -102,7 +102,7 @@ All mapped to HTTP responses via `app/utils/exception_handlers.py`
 
 **Only commit after all tests pass (100%).**
 
-Use conventional commits format - one short sentence, no period:
+Use conventional commits format - one short sentence, no period, no Co-Authored-By:
 
 ```
 type: short description
@@ -118,6 +118,8 @@ refactor: extract Redis pub/sub into separate PubSubService layer
 docs: add testing guidelines to CLAUDE.md
 tests: auth cookie tests added
 ```
+
+**Important**: Do NOT add "Co-Authored-By" lines to commits
 
 ## Testing
 
