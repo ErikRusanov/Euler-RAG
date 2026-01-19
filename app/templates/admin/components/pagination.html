@@ -1,0 +1,25 @@
+<div class="pagination">
+    <div class="pagination-info">
+        Showing {{ pagination.start }}-{{ pagination.end }} of {{ pagination.total }}
+    </div>
+    <div class="pagination-controls">
+        <div class="pagination-buttons">
+            <button
+                class="pagination-btn"
+                {% if not pagination.has_prev %}disabled{% endif %}
+                hx-get="/admin/documents?page={{ pagination.page - 1 }}&page_size={{ pagination.page_size }}{% if current_filters.status %}&status={{ current_filters.status }}{% endif %}{% if current_filters.subject_id %}&subject_id={{ current_filters.subject_id }}{% endif %}{% if current_filters.teacher_id %}&teacher_id={{ current_filters.teacher_id }}{% endif %}"
+                hx-target="#documents-content"
+                hx-push-url="true">
+                Previous
+            </button>
+            <button
+                class="pagination-btn"
+                {% if not pagination.has_next %}disabled{% endif %}
+                hx-get="/admin/documents?page={{ pagination.page + 1 }}&page_size={{ pagination.page_size }}{% if current_filters.status %}&status={{ current_filters.status }}{% endif %}{% if current_filters.subject_id %}&subject_id={{ current_filters.subject_id }}{% endif %}{% if current_filters.teacher_id %}&teacher_id={{ current_filters.teacher_id }}{% endif %}"
+                hx-target="#documents-content"
+                hx-push-url="true">
+                Next
+            </button>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,91 @@
+<div class="modal-overlay" onclick="this.remove()">
+    <div class="modal-container" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 class="modal-title">{{ document.filename }}</h2>
+            <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="modal-pdf">
+                <embed
+                    src="/api/documents/{{ document.id }}/download"
+                    type="application/pdf"
+                    width="100%"
+                    height="100%" />
+            </div>
+            <div class="modal-details">
+                <div class="detail-section">
+                    <div class="detail-label">Document ID</div>
+                    <div class="detail-value">#{{ document.id }}</div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Filename</div>
+                    <div class="detail-value">{{ document.filename }}</div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Status</div>
+                    <div class="detail-value">
+                        <span class="status-badge {{ document.status.value }}">{{ document.status.value }}</span>
+                    </div>
+                </div>
+
+                {% if document.subject %}
+                <div class="detail-section">
+                    <div class="detail-label">Subject</div>
+                    <div class="detail-value">{{ document.subject.name }} (Semester {{ document.subject.semester }})</div>
+                </div>
+                {% endif %}
+
+                {% if document.teacher %}
+                <div class="detail-section">
+                    <div class="detail-label">Teacher</div>
+                    <div class="detail-value">{{ document.teacher.name }}</div>
+                </div>
+                {% endif %}
+
+                <div class="detail-section">
+                    <div class="detail-label">S3 Key</div>
+                    <div class="detail-value" style="font-family: monospace; font-size: 0.75rem;">{{ document.s3_key }}</div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Uploaded At</div>
+                    <div class="detail-value">{{ document.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+                </div>
+
+                <div class="detail-section">
+                    <div class="detail-label">Last Updated</div>
+                    <div class="detail-value">{{ document.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+                </div>
+
+                {% if document.processed_at %}
+                <div class="detail-section">
+                    <div class="detail-label">Processed At</div>
+                    <div class="detail-value">{{ document.processed_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+                </div>
+                {% endif %}
+
+                {% if document.error %}
+                <div class="detail-section">
+                    <div class="detail-label">Error</div>
+                    <div class="detail-value" style="color: var(--error);">{{ document.error }}</div>
+                </div>
+                {% endif %}
+
+                {% if document.progress %}
+                <div class="detail-section">
+                    <div class="detail-label">Progress</div>
+                    <div class="detail-value">
+                        Page {{ document.progress.page }} of {{ document.progress.total }}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>

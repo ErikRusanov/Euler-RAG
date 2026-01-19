@@ -1,0 +1,94 @@
+<div class="filters-bar">
+    <div class="filter-group">
+        <label class="filter-label" for="status">Status</label>
+        <div class="custom-select">
+            <select
+                id="status"
+                name="status"
+                hx-get="/admin/documents"
+                hx-trigger="change"
+                hx-target="#documents-content"
+                hx-include="[name='subject_id'], [name='teacher_id'], [name='page_size']"
+                hx-push-url="true">
+                <option value="">All Statuses</option>
+                <option value="uploaded" {% if current_filters.status == 'uploaded' %}selected{% endif %}>Uploaded</option>
+                <option value="pending" {% if current_filters.status == 'pending' %}selected{% endif %}>Pending</option>
+                <option value="processing" {% if current_filters.status == 'processing' %}selected{% endif %}>Processing</option>
+                <option value="ready" {% if current_filters.status == 'ready' %}selected{% endif %}>Ready</option>
+                <option value="error" {% if current_filters.status == 'error' %}selected{% endif %}>Error</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="filter-group">
+        <label class="filter-label" for="subject_id">Subject</label>
+        <div class="custom-select">
+            <select
+                id="subject_id"
+                name="subject_id"
+                hx-get="/admin/documents"
+                hx-trigger="change"
+                hx-target="#documents-content"
+                hx-include="[name='status'], [name='teacher_id'], [name='page_size']"
+                hx-push-url="true">
+                <option value="">All Subjects</option>
+                {% for subject in subjects %}
+                <option value="{{ subject.id }}" {% if current_filters.subject_id == subject.id %}selected{% endif %}>
+                    {{ subject.name }} (Semester {{ subject.semester }})
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="filter-group">
+        <label class="filter-label" for="teacher_id">Teacher</label>
+        <div class="custom-select">
+            <select
+                id="teacher_id"
+                name="teacher_id"
+                hx-get="/admin/documents"
+                hx-trigger="change"
+                hx-target="#documents-content"
+                hx-include="[name='status'], [name='subject_id'], [name='page_size']"
+                hx-push-url="true">
+                <option value="">All Teachers</option>
+                {% for teacher in teachers %}
+                <option value="{{ teacher.id }}" {% if current_filters.teacher_id == teacher.id %}selected{% endif %}>
+                    {{ teacher.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="filter-group">
+        <label class="filter-label" for="page_size">Per Page</label>
+        <div class="custom-select">
+            <select
+                id="page_size"
+                name="page_size"
+                hx-get="/admin/documents"
+                hx-trigger="change"
+                hx-target="#documents-content"
+                hx-include="[name='status'], [name='subject_id'], [name='teacher_id']"
+                hx-push-url="true">
+                <option value="10" {% if pagination.page_size == 10 %}selected{% endif %}>10</option>
+                <option value="25" {% if pagination.page_size == 25 %}selected{% endif %}>25</option>
+                <option value="50" {% if pagination.page_size == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if pagination.page_size == 100 %}selected{% endif %}>100</option>
+            </select>
+        </div>
+    </div>
+
+    {% if current_filters.status or current_filters.subject_id or current_filters.teacher_id %}
+    <div class="filter-group" style="align-self: flex-end;">
+        <a href="/admin/documents" class="btn btn-secondary">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+            Clear Filters
+        </a>
+    </div>
+    {% endif %}
+</div>
