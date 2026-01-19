@@ -2,11 +2,15 @@
 
 import enum
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+if TYPE_CHECKING:
+    from app.models.subject import Subject
+    from app.models.teacher import Teacher
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
 
@@ -91,6 +95,14 @@ class Document(BaseModel):
     # Processing timestamp
     processed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
+    )
+
+    # Relationships (lazy='selectinload' for optimized queries)
+    subject: Mapped[Optional["Subject"]] = relationship(
+        "Subject", lazy="noload", foreign_keys=[subject_id]
+    )
+    teacher: Mapped[Optional["Teacher"]] = relationship(
+        "Teacher", lazy="noload", foreign_keys=[teacher_id]
     )
 
     def __repr__(self) -> str:

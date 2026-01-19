@@ -8,7 +8,8 @@ find() method.
 import logging
 from typing import Any, BinaryIO, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from app.exceptions import InvalidFileTypeError, RelatedRecordNotFoundError
 from app.models.document import Document
@@ -156,3 +157,64 @@ class DocumentService(BaseService[Document]):
             kwargs["teacher_id"] = teacher_id
 
         return await self.update(document_id, **kwargs)
+
+    async def list_with_relationships(
+        self,
+        skip: int = 0,
+        limit: int = 20,
+        status: Optional[Any] = None,
+        subject_id: Optional[int] = None,
+        teacher_id: Optional[int] = None,
+    ) -> tuple[list[Document], int]:
+        """Get documents with eager-loaded relationships.
+
+        Optimized query that loads subject and teacher in a single query
+        using selectinload to prevent N+1 query problems.
+
+        Args:
+            skip: Number of records to skip for pagination.
+            limit: Maximum number of records to return.
+            status: Filter by document status.
+            subject_id: Filter by subject ID.
+            teacher_id: Filter by teacher ID.
+
+        Returns:
+            Tuple of (documents list, total count).
+
+        Raises:
+            DatabaseConnectionError: If database operation fails.
+        """
+        # Build base query with eager loading
+        stmt = (
+            select(Document)
+            .options(selectinload(Document.subject), selectinload(Document.teacher))
+            .order_by(Document.created_at.desc())
+        )
+
+        # Apply filters
+        if status is not None:
+            stmt = stmt.where(Document.status == status)
+        if subject_id is not None:
+            stmt = stmt.where(Document.subject_id == subject_id)
+        if teacher_id is not None:
+            stmt = stmt.where(Document.teacher_id == teacher_id)
+
+        # Get total count
+        count_stmt = select(func.count()).select_from(Document)
+        if status is not None:
+            count_stmt = count_stmt.where(Document.status == status)
+        if subject_id is not None:
+            count_stmt = count_stmt.where(Document.subject_id == subject_id)
+        if teacher_id is not None:
+            count_stmt = count_stmt.where(Document.teacher_id == teacher_id)
+
+        total = await self.db.scalar(count_stmt)
+
+        # Apply pagination
+        stmt = stmt.offset(skip).limit(limit)
+
+        # Execute query
+        result = await self.db.execute(stmt)
+        documents = list(result.scalars().all())
+
+        return documents, total or 0
