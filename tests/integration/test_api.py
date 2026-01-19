@@ -1,11 +1,15 @@
 """Integration tests for API endpoints and middleware."""
 
+import json
+
 import pytest
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis
 
 from app.config import Settings
 from app.middleware.cookie_auth import COOKIE_NAME, generate_session_token
+from app.workers.progress import Progress, ProgressTracker
 
 
 @pytest.fixture
@@ -357,3 +361,265 @@ class TestNotFoundHandler:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         data = response.json()
         assert data["error"] == "Not Found"
+
+
+@pytest.fixture
+async def redis_client(test_settings) -> Redis:
+    """Create Redis client for integration tests.
+
+    Requires Redis to be running.
+    """
+    client = Redis.from_url(
+        test_settings.redis_url,
+        decode_responses=True,
+    )
+
+    # Verify connection
+    try:
+        await client.ping()
+    except Exception:
+        pytest.skip("Redis not available for integration tests")
+
+    # Cleanup before test to remove stale state
+    keys = await client.keys("euler:*")
+    if keys:
+        await client.delete(*keys)
+
+    yield client
+
+    # Cleanup after test
+    keys = await client.keys("euler:*")
+    if keys:
+        await client.delete(*keys)
+    await client.aclose()
+
+
+@pytest.fixture
+def progress_tracker(redis_client: Redis) -> ProgressTracker:
+    """Create ProgressTracker with real Redis."""
+    return ProgressTracker(redis_client)
+
+
+@pytest.fixture
+def app_with_redis(app, redis_client: Redis):
+    """App fixture with Redis dependency override."""
+    from app.api.admin import get_progress_tracker
+    from app.workers.progress import ProgressTracker
+
+    # Override get_progress_tracker to use real Redis
+    def override_get_progress_tracker() -> ProgressTracker:
+        return ProgressTracker(redis_client)
+
+    app.dependency_overrides[get_progress_tracker] = override_get_progress_tracker
+    yield app
+    app.dependency_overrides.pop(get_progress_tracker, None)
+
+
+@pytest.fixture
+async def authenticated_client_with_redis(app_with_redis, settings: Settings):
+    """Create authenticated client with Redis support."""
+    transport = ASGITransport(app=app_with_redis)
+    session_token = generate_session_token(settings.api_key)
+    cookies = {COOKIE_NAME: session_token}
+    async with AsyncClient(
+        transport=transport, base_url="http://test", cookies=cookies
+    ) as client:
+        yield client, settings
+
+
+class TestDocumentProgressAPI:
+    """Tests for document progress tracking endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_sse_endpoint_returns_event_stream(
+        self, authenticated_client_with_redis, progress_tracker: ProgressTracker
+    ):
+        """SSE endpoint returns text/event-stream content type."""
+        client, _ = authenticated_client_with_redis
+
+        response = await client.get(
+            "/admin/api/documents/1/progress",
+            headers={"Accept": "text/event-stream"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "text/event-stream" in response.headers.get("content-type", "")
+
+    @pytest.mark.asyncio
+    async def test_sse_endpoint_sends_current_progress_on_connect(
+        self, authenticated_client_with_redis, progress_tracker: ProgressTracker
+    ):
+        """SSE endpoint sends current progress from Redis when available."""
+        client, _ = authenticated_client_with_redis
+        document_id = 42
+
+        # Set current progress in Redis
+        progress = Progress(
+            document_id=document_id,
+            page=5,
+            total=10,
+            status="processing",
+            message="Processing page 5/10",
+        )
+        await progress_tracker.update(progress)
+
+        # Connect to SSE endpoint
+        async with client.stream(
+            "GET", f"/admin/api/documents/{document_id}/progress"
+        ) as response:
+            assert response.status_code == status.HTTP_200_OK
+
+            # Read first event (should be current progress)
+            events = []
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data = json.loads(line[6:])  # Remove "data: " prefix
+                    events.append(data)
+                    break  # Just check first event
+
+            assert len(events) > 0
+            assert events[0]["document_id"] == document_id
+            assert events[0]["page"] == 5
+            assert events[0]["total"] == 10
+            assert events[0]["status"] == "processing"
+
+    @pytest.mark.asyncio
+    async def test_sse_endpoint_streams_progress_updates(
+        self, authenticated_client_with_redis, progress_tracker: ProgressTracker
+    ):
+        """SSE endpoint streams progress updates from Redis pub/sub."""
+        client, _ = authenticated_client_with_redis
+        document_id = 99
+
+        # Start SSE connection
+        async with client.stream(
+            "GET", f"/admin/api/documents/{document_id}/progress"
+        ) as response:
+            assert response.status_code == status.HTTP_200_OK
+
+            # Publish progress update in background
+            import asyncio
+
+            async def publish_update():
+                await asyncio.sleep(0.1)  # Small delay to ensure subscription is ready
+                progress = Progress(
+                    document_id=document_id,
+                    page=3,
+                    total=7,
+                    status="processing",
+                    message="Processing page 3/7",
+                )
+                await progress_tracker.update(progress)
+
+            # Start publishing task
+            publish_task = asyncio.create_task(publish_update())
+
+            # Read events
+            events = []
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data = json.loads(line[6:])
+                    events.append(data)
+                    if len(events) >= 2:  # Got initial + update
+                        break
+
+            await publish_task
+
+            # Should have received at least the published update
+            assert len(events) >= 1
+            update_event = events[-1]
+            assert update_event["document_id"] == document_id
+            assert update_event["page"] == 3
+            assert update_event["total"] == 7
+
+    @pytest.mark.asyncio
+    async def test_sse_endpoint_closes_on_ready_status(
+        self, authenticated_client_with_redis, progress_tracker: ProgressTracker
+    ):
+        """SSE endpoint closes connection when status becomes ready."""
+        client, _ = authenticated_client_with_redis
+        document_id = 123
+
+        # Start SSE connection
+        async with client.stream(
+            "GET", f"/admin/api/documents/{document_id}/progress"
+        ) as response:
+            assert response.status_code == status.HTTP_200_OK
+
+            # Publish ready status
+            import asyncio
+
+            async def publish_ready():
+                await asyncio.sleep(0.1)
+                progress = Progress(
+                    document_id=document_id,
+                    page=10,
+                    total=10,
+                    status="ready",
+                    message="Processing complete",
+                )
+                await progress_tracker.update(progress)
+
+            publish_task = asyncio.create_task(publish_ready())
+
+            # Read events until connection closes
+            events = []
+            try:
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        data = json.loads(line[6:])
+                        events.append(data)
+                        if data.get("status") == "ready":
+                            break
+            except Exception:
+                pass  # Connection may close
+
+            await publish_task
+
+            # Should have received ready event
+            ready_events = [e for e in events if e.get("status") == "ready"]
+            assert len(ready_events) > 0
+
+    @pytest.mark.asyncio
+    async def test_get_current_progress_returns_progress_when_exists(
+        self, authenticated_client_with_redis, progress_tracker: ProgressTracker
+    ):
+        """GET /admin/api/documents/{id}/progress/current returns progress."""
+        client, _ = authenticated_client_with_redis
+        document_id = 456
+
+        # Set progress in Redis
+        progress = Progress(
+            document_id=document_id,
+            page=7,
+            total=15,
+            status="processing",
+            message="Processing page 7/15",
+        )
+        await progress_tracker.update(progress)
+
+        # Get current progress
+        response = await client.get(
+            f"/admin/api/documents/{document_id}/progress/current"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["document_id"] == document_id
+        assert data["page"] == 7
+        assert data["total"] == 15
+        assert data["status"] == "processing"
+
+    @pytest.mark.asyncio
+    async def test_get_current_progress_returns_404_when_not_exists(
+        self, authenticated_client_with_redis
+    ):
+        """GET /admin/api/documents/{id}/progress/current returns 404."""
+        client, _ = authenticated_client_with_redis
+        document_id = 999
+
+        response = await client.get(
+            f"/admin/api/documents/{document_id}/progress/current"
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND

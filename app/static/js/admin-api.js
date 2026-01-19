@@ -140,9 +140,17 @@ function reloadDocumentsTable(queryParams = null) {
             const currentContent = document.getElementById('documents-content');
 
             if (newContent && currentContent) {
+                // Stop all existing progress tracking
+                progressConnections.forEach((_, documentId) => {
+                    stopProgressTracking(documentId);
+                });
+                progressConnections.clear();
+
                 currentContent.outerHTML = newContent.outerHTML;
                 // Re-initialize filter event listeners after content update
                 initializeFilterHandlers();
+                // Re-initialize progress tracking for new content
+                initializeProgressTracking();
             } else {
                 window.location.reload();
             }
@@ -258,6 +266,8 @@ async function deleteDocumentWithConfirm(documentId, button) {
 async function startDocumentProcessing(documentId) {
     try {
         await startProcessing(documentId);
+        // Start progress tracking immediately
+        startProgressTracking(documentId);
         reloadDocumentsTable();
     } catch (error) {
         alert(`Failed to start processing: ${error.message}`);
@@ -490,6 +500,231 @@ function initializeFileUpload() {
     }
 }
 
+// Progress tracking via SSE
+const progressConnections = new Map(); // documentId -> EventSource
+
+/**
+ * Start tracking progress for a document via SSE.
+ * @param {number} documentId - Document ID to track.
+ */
+function startProgressTracking(documentId) {
+    // Don't start if already tracking
+    if (progressConnections.has(documentId)) {
+        return;
+    }
+
+    const eventSource = new EventSource(`/admin/api/documents/${documentId}/progress`);
+
+    eventSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            updateProgressBar(documentId, data.page, data.total);
+
+            // Update status if ready
+            if (data.status === 'ready') {
+                updateDocumentStatus(documentId, 'ready');
+                stopProgressTracking(documentId);
+            }
+        } catch (error) {
+            console.error('Error parsing progress data:', error);
+        }
+    };
+
+    eventSource.onerror = (error) => {
+        console.error(`SSE error for document ${documentId}:`, error);
+        // Close connection on error
+        stopProgressTracking(documentId);
+    };
+
+    progressConnections.set(documentId, eventSource);
+}
+
+/**
+ * Stop tracking progress for a document.
+ * @param {number} documentId - Document ID to stop tracking.
+ */
+function stopProgressTracking(documentId) {
+    const eventSource = progressConnections.get(documentId);
+    if (eventSource) {
+        eventSource.close();
+        progressConnections.delete(documentId);
+    }
+}
+
+/**
+ * Update progress bar UI for a document.
+ * @param {number} documentId - Document ID.
+ * @param {number} page - Current page number.
+ * @param {number} total - Total pages.
+ */
+function updateProgressBar(documentId, page, total) {
+    const container = document.querySelector(
+        `.progress-bar-container[data-document-id="${documentId}"]`
+    );
+    if (!container) {
+        return;
+    }
+
+    const fill = container.querySelector('.progress-bar-fill');
+    const text = container.querySelector('.progress-text');
+
+    if (fill && text) {
+        const percentage = total > 0 ? (page / total) * 100 : 0;
+        fill.style.width = `${percentage}%`;
+        text.textContent = `${page}/${total}`;
+    }
+}
+
+/**
+ * Update document status badge in the table.
+ * @param {number} documentId - Document ID.
+ * @param {string} status - New status value.
+ */
+function updateDocumentStatus(documentId, status) {
+    const container = document.querySelector(
+        `.progress-bar-container[data-document-id="${documentId}"]`
+    );
+    if (!container) {
+        return;
+    }
+
+    const row = container.closest('.table-row');
+    if (!row) {
+        return;
+    }
+
+    const statusBadge = row.querySelector('.status-badge');
+    if (statusBadge) {
+        // Remove old status class
+        statusBadge.className = 'status-badge';
+        // Add new status class
+        statusBadge.classList.add(status);
+        statusBadge.textContent = status;
+
+        // Update tooltip for error status
+        if (status === 'error') {
+            // Try to get error message from data attribute or keep existing title
+            const errorMessage = statusBadge.getAttribute('data-error-message');
+            if (errorMessage) {
+                statusBadge.setAttribute('title', errorMessage);
+            }
+        } else {
+            // Remove title for non-error statuses
+            statusBadge.removeAttribute('title');
+        }
+    }
+
+    // Update button states based on status
+    const viewButton = row.querySelector('button[data-button-type="view"]');
+    const deleteButton = row.querySelector('button[data-button-type="delete"]');
+
+    if (status === 'pending') {
+        // Disable buttons for pending status
+        if (viewButton) {
+            viewButton.disabled = true;
+            viewButton.classList.add('icon-btn-disabled');
+            viewButton.title = 'View not available (pending)';
+            viewButton.removeAttribute('onclick');
+        }
+        if (deleteButton) {
+            deleteButton.disabled = true;
+            deleteButton.classList.add('icon-btn-disabled');
+            deleteButton.title = 'Delete not available (pending)';
+            deleteButton.removeAttribute('onclick');
+        }
+    } else {
+        // Enable buttons for other statuses (ready, uploaded, etc.)
+        if (viewButton) {
+            viewButton.disabled = false;
+            viewButton.classList.remove('icon-btn-disabled');
+            viewButton.title = 'View Document';
+            const docId = viewButton.getAttribute('data-document-id') || documentId;
+            viewButton.setAttribute('onclick', `viewDocument(${docId})`);
+        }
+        if (deleteButton) {
+            deleteButton.disabled = false;
+            deleteButton.classList.remove('icon-btn-disabled');
+            deleteButton.title = 'Delete Document';
+            const docId = deleteButton.getAttribute('data-document-id') || documentId;
+            deleteButton.setAttribute(
+                'onclick',
+                `deleteDocument(${docId}, this); return false;`
+            );
+        }
+    }
+}
+
+/**
+ * Initialize progress tracking for all processing documents on page load.
+ */
+function initializeProgressTracking() {
+    // Find all progress containers
+    const progressContainers = document.querySelectorAll('.progress-bar-container');
+
+    progressContainers.forEach((container) => {
+        const documentId = parseInt(
+            container.getAttribute('data-document-id'),
+            10
+        );
+        if (!documentId) {
+            return;
+        }
+
+        // Get initial progress from data attributes (from database)
+        const page = parseInt(container.getAttribute('data-progress-page') || '0', 10);
+        const total = parseInt(container.getAttribute('data-progress-total') || '0', 10);
+
+        // Display initial progress if available
+        if (total > 0) {
+            updateProgressBar(documentId, page, total);
+        }
+
+        // Find status badge to check document status
+        const row = container.closest('.table-row');
+        if (!row) {
+            return;
+        }
+
+        const statusBadge = row.querySelector('.status-badge');
+        if (!statusBadge) {
+            return;
+        }
+
+        const status = statusBadge.textContent.trim().toLowerCase();
+
+        // Start SSE tracking only for processing or pending documents
+        if (status === 'processing' || status === 'pending') {
+            // Try to get current progress from Redis first
+            fetch(`/admin/api/documents/${documentId}/progress/current`)
+                .then((response) => {
+                    if (response.ok) {
+                        return response.json();
+                    }
+                    return null;
+                })
+                .then((progress) => {
+                    if (progress) {
+                        updateProgressBar(
+                            documentId,
+                            progress.page,
+                            progress.total
+                        );
+                    }
+                    // Start SSE tracking
+                    startProgressTracking(documentId);
+                })
+                .catch((error) => {
+                    console.error(
+                        `Error fetching current progress for ${documentId}:`,
+                        error
+                    );
+                    // Start SSE tracking anyway
+                    startProgressTracking(documentId);
+                });
+        }
+    });
+}
+
 // Export functions for use in other scripts
 window.AdminAPI = {
     getCookie,
@@ -511,6 +746,10 @@ window.AdminAPI = {
     hideLoadingOverlay,
     handleFileUpload,
     initializeFileUpload,
+    startProgressTracking,
+    stopProgressTracking,
+    updateProgressBar,
+    initializeProgressTracking,
 };
 
 // Global functions for onclick handlers
@@ -522,6 +761,7 @@ window.startDocumentProcessing = startDocumentProcessing;
 function initializeAllHandlers() {
     initializeFilterHandlers();
     initializeFileUpload();
+    initializeProgressTracking();
 }
 
 if (document.readyState === 'loading') {

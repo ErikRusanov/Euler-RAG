@@ -349,7 +349,7 @@
 
 .table-header {
     display: grid;
-    grid-template-columns: 80px 1fr 150px 200px 120px;
+    grid-template-columns: 80px 1fr 150px 120px 200px 120px;
     gap: 1rem;
     padding: 1rem 1.5rem;
     background: rgba(255, 255, 255, 0.02);
@@ -370,7 +370,7 @@
 
 .table-row {
     display: grid;
-    grid-template-columns: 80px 1fr 150px 200px 120px;
+    grid-template-columns: 80px 1fr 150px 120px 200px 120px;
     gap: 1rem;
     padding: 1rem 1.5rem;
     border-bottom: 1px solid var(--glass-border);
@@ -448,6 +448,41 @@
 .status-badge.error {
     background: var(--error-bg);
     color: var(--error);
+    cursor: help;
+}
+
+/* Progress Bar */
+.progress-cell {
+    display: flex;
+    align-items: center;
+}
+
+.progress-bar-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    width: 100%;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+    border-radius: 2px;
+}
+
+.progress-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-family: 'Courier New', monospace;
 }
 
 /* Action Buttons */
@@ -486,6 +521,17 @@
     background: rgba(99, 102, 241, 0.1);
     color: var(--accent);
     border-color: rgba(99, 102, 241, 0.2);
+}
+
+.icon-btn-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 .icon-btn-primary:hover {

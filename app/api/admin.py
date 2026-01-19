@@ -1,18 +1,22 @@
 """Admin panel routes for browser-based document management."""
 
+import json
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions import RecordNotFoundError
 from app.models.document import DocumentStatus
 from app.services.document_service import DocumentService
 from app.services.subject_service import SubjectService
 from app.services.teacher_service import TeacherService
 from app.utils.db import get_db_session
+from app.utils.redis import get_redis_client
 from app.utils.templates import templates
+from app.workers.progress import ProgressTracker
 
 logger = logging.getLogger(__name__)
 
@@ -180,3 +184,77 @@ async def admin_root() -> RedirectResponse:
         Redirect response to documents tab.
     """
     return RedirectResponse(url="/admin/documents", status_code=status.HTTP_302_FOUND)
+
+
+def get_progress_tracker() -> ProgressTracker:
+    """Get ProgressTracker instance for dependency injection.
+
+    Returns:
+        ProgressTracker instance with Redis client.
+    """
+    redis = get_redis_client()
+    return ProgressTracker(redis)
+
+
+@router.get("/admin/api/documents/{document_id}/progress")
+async def stream_document_progress(
+    document_id: int,
+    progress_tracker: ProgressTracker = Depends(get_progress_tracker),
+) -> StreamingResponse:
+    """Stream document processing progress via Server-Sent Events.
+
+    Args:
+        document_id: Document ID to track progress for.
+        progress_tracker: ProgressTracker instance.
+
+    Returns:
+        StreamingResponse with text/event-stream content type.
+    """
+
+    async def event_generator():
+        # Send current progress if available
+        current = await progress_tracker.get(document_id)
+        if current:
+            yield f"data: {json.dumps(current.to_dict())}\n\n"
+
+        # Subscribe to updates
+        async for progress in progress_tracker.subscribe(document_id):
+            yield f"data: {json.dumps(progress.to_dict())}\n\n"
+            if progress.status == "ready":
+                break
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@router.get("/admin/api/documents/{document_id}/progress/current")
+async def get_current_progress(
+    document_id: int,
+    progress_tracker: ProgressTracker = Depends(get_progress_tracker),
+) -> Response:
+    """Get current progress for a document from Redis.
+
+    Args:
+        document_id: Document ID to get progress for.
+        progress_tracker: ProgressTracker instance.
+
+    Returns:
+        JSON response with progress data or 404 if not found.
+
+    Raises:
+        RecordNotFoundError: If progress not found in Redis.
+    """
+    progress = await progress_tracker.get(document_id)
+    if not progress:
+        raise RecordNotFoundError("Progress", document_id)
+
+    return Response(
+        content=json.dumps(progress.to_dict()),
+        media_type="application/json",
+    )
