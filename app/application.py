@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application startup and shutdown lifecycle.
 
+    Tracks initialized resources and ensures proper cleanup on startup failure
+    to prevent connection pool exhaustion.
+
     Args:
         app: FastAPI application instance.
 
@@ -43,14 +46,70 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         f"[{settings.environment}] debug={settings.debug}"
     )
 
+    # Track what was initialized for cleanup on failure
+    db_initialized = False
+    s3_initialized = False
+    redis_initialized = False
+    workers_started = False
+
     try:
         await init_db()
+        db_initialized = True
+
         init_s3()
+        s3_initialized = True
+
         await init_redis()
+        redis_initialized = True
+
         await worker_manager.start()
+        workers_started = True
+
         logger.info("Application startup complete")
     except Exception as e:
         logger.critical(f"Failed to start application: {e}")
+
+        # Cleanup in reverse order of initialization
+        if workers_started:
+            try:
+                await worker_manager.stop()
+            except Exception as cleanup_error:
+                logger.error(
+                    "Error stopping workers during cleanup",
+                    extra={"error": str(cleanup_error)},
+                    exc_info=True,
+                )
+
+        if redis_initialized:
+            try:
+                await close_redis()
+            except Exception as cleanup_error:
+                logger.error(
+                    "Error closing Redis during cleanup",
+                    extra={"error": str(cleanup_error)},
+                    exc_info=True,
+                )
+
+        if s3_initialized:
+            try:
+                close_s3()
+            except Exception as cleanup_error:
+                logger.error(
+                    "Error closing S3 during cleanup",
+                    extra={"error": str(cleanup_error)},
+                    exc_info=True,
+                )
+
+        if db_initialized:
+            try:
+                await close_db()
+            except Exception as cleanup_error:
+                logger.error(
+                    "Error closing DB during cleanup",
+                    extra={"error": str(cleanup_error)},
+                    exc_info=True,
+                )
+
         raise
 
     yield
