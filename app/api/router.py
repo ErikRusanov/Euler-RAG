@@ -59,6 +59,8 @@ def create_protected_router() -> APIRouter:
         APIRouter with protected API endpoints including health checks.
     """
     from app.api.documents import router as documents_router
+    from app.api.subjects import router as subjects_router
+    from app.api.teachers import router as teachers_router
 
     router = APIRouter(prefix=APIKeyMiddleware.PROTECTED_PREFIX)
 
@@ -104,5 +106,7 @@ def create_protected_router() -> APIRouter:
             )
 
     router.include_router(documents_router)
+    router.include_router(subjects_router)
+    router.include_router(teachers_router)
 
     return router

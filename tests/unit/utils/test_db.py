@@ -37,34 +37,30 @@ class TestDatabaseManager:
         """verify_connection returns True on successful connection."""
         manager = DatabaseManager()
 
-        with patch.object(manager, "init_engine") as mock_init:
-            mock_engine = MagicMock()
-            mock_conn = AsyncMock()
-            mock_conn.execute = AsyncMock()
+        with patch.object(manager, "init_session_factory") as mock_factory:
+            mock_session = AsyncMock()
+            mock_session.execute = AsyncMock()
             mock_context = AsyncMock()
-            mock_context.__aenter__.return_value = mock_conn
+            mock_context.__aenter__.return_value = mock_session
             mock_context.__aexit__.return_value = None
-            mock_engine.connect.return_value = mock_context
-            mock_init.return_value = mock_engine
+            mock_factory.return_value = MagicMock(return_value=mock_context)
 
             is_connected = await manager.verify_connection()
 
             assert is_connected is True
-            mock_conn.execute.assert_awaited_once()
+            mock_session.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_verify_connection_raises_on_failure(self):
         """verify_connection raises on connection failure."""
         manager = DatabaseManager()
 
-        with patch.object(manager, "init_engine") as mock_init:
-            mock_engine = MagicMock()
+        with patch.object(manager, "init_session_factory") as mock_factory:
             mock_context = AsyncMock()
             mock_context.__aenter__.side_effect = OperationalError(
                 "connection failed", None, None
             )
-            mock_engine.connect.return_value = mock_context
-            mock_init.return_value = mock_engine
+            mock_factory.return_value = MagicMock(return_value=mock_context)
 
             with pytest.raises(OperationalError):
                 await manager.verify_connection()

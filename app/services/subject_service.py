@@ -81,3 +81,32 @@ class SubjectService(BaseService[Subject]):
             raise DatabaseConnectionError(
                 f"Database error during get_with_documents: {str(e)}"
             ) from e
+
+    async def search(self, search: str = "", limit: int = 10) -> List[Subject]:
+        """Search subjects by name with limit.
+
+        Args:
+            search: Search term to filter by name (case-insensitive).
+            limit: Maximum number of results to return.
+
+        Returns:
+            List of matching Subject instances ordered by name and semester.
+
+        Raises:
+            DatabaseConnectionError: If database operation fails.
+        """
+        try:
+            stmt = select(Subject).order_by(Subject.name, Subject.semester).limit(limit)
+            if search:
+                stmt = stmt.where(Subject.name.ilike(f"%{search}%"))
+            result = await self.db.execute(stmt)
+            return list(result.scalars().all())
+        except (DBAPIError, SQLAlchemyError) as e:
+            logger.error(
+                "Failed to search subjects",
+                extra={"search": search, "error": str(e)},
+                exc_info=True,
+            )
+            raise DatabaseConnectionError(
+                f"Database error during search: {str(e)}"
+            ) from e

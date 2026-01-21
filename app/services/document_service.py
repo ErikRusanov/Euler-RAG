@@ -160,6 +160,26 @@ class DocumentService(BaseService[Document]):
 
         return await self.update(document_id, **kwargs)
 
+    async def get_with_relationships(self, document_id: int) -> Optional[Document]:
+        """Get a document by ID with eager-loaded relationships.
+
+        Args:
+            document_id: Document ID to retrieve.
+
+        Returns:
+            Document with loaded subject and teacher, or None if not found.
+
+        Raises:
+            DatabaseConnectionError: If database operation fails.
+        """
+        stmt = (
+            select(Document)
+            .options(selectinload(Document.subject), selectinload(Document.teacher))
+            .where(Document.id == document_id)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_with_relationships(
         self,
         skip: int = 0,

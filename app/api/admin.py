@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import RedirectResponse, StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import RecordNotFoundError
 from app.models.document import DocumentStatus
@@ -13,6 +14,7 @@ from app.services.document_service import DocumentService
 from app.services.subject_service import SubjectService
 from app.services.teacher_service import TeacherService
 from app.utils.api_helpers import get_pagination_context, get_progress_tracker
+from app.utils.db import get_db_session
 from app.utils.dependencies import dependencies
 from app.utils.templates import templates
 from app.workers.progress import ProgressTracker
@@ -25,9 +27,7 @@ router = APIRouter(tags=["admin"])
 @router.get("/admin/documents")
 async def admin_documents(
     request: Request,
-    document_service: DocumentService = Depends(dependencies.document),
-    subject_service: SubjectService = Depends(dependencies.subject),
-    teacher_service: TeacherService = Depends(dependencies.teacher),
+    db: AsyncSession = Depends(get_db_session),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=10, le=100),
     status_filter: Optional[str] = Query(default=None, alias="status"),
@@ -38,9 +38,7 @@ async def admin_documents(
 
     Args:
         request: FastAPI request object.
-        document_service: DocumentService instance.
-        subject_service: SubjectService instance.
-        teacher_service: TeacherService instance.
+        db: Shared database session for all services.
         page: Current page number.
         page_size: Number of items per page.
         status_filter: Filter by document status.
@@ -50,6 +48,11 @@ async def admin_documents(
     Returns:
         Rendered documents template.
     """
+    # Create services with shared session to avoid connection pool exhaustion
+    document_service = DocumentService(db)
+    subject_service = SubjectService(db)
+    teacher_service = TeacherService(db)
+
     # Convert status string to enum
     status_enum = None
     if status_filter:

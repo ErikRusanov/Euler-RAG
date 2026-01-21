@@ -18,6 +18,9 @@ class DocumentResponse(BaseModel):
     progress: dict[str, Any]
     subject_id: Optional[int] = None
     teacher_id: Optional[int] = None
+    subject_name: Optional[str] = None
+    subject_semester: Optional[int] = None
+    teacher_name: Optional[str] = None
     error: Optional[str] = None
     created_at: datetime
     updated_at: datetime

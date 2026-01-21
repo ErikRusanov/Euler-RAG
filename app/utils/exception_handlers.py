@@ -11,6 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.exceptions import (
     DatabaseConnectionError,
+    DuplicateRecordError,
     InvalidFileTypeError,
     ModelError,
     RecordNotFoundError,
@@ -41,6 +42,10 @@ EXCEPTION_CONFIGS: dict[type[Exception], ExceptionConfig] = {
     RelatedRecordNotFoundError: ExceptionConfig(
         status_code=status.HTTP_400_BAD_REQUEST,
         error_name="Bad Request",
+    ),
+    DuplicateRecordError: ExceptionConfig(
+        status_code=status.HTTP_409_CONFLICT,
+        error_name="Conflict",
     ),
     DatabaseConnectionError: ExceptionConfig(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

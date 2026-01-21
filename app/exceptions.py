@@ -31,6 +31,21 @@ class DatabaseConnectionError(ModelError):
     """Raised when database connection fails."""
 
 
+class DuplicateRecordError(ModelError):
+    """Raised when attempting to create a duplicate record."""
+
+    def __init__(self, model_name: str, detail: str):
+        """Initialize DuplicateRecordError.
+
+        Args:
+            model_name: Name of the model.
+            detail: Description of what makes the record duplicate.
+        """
+        self.model_name = model_name
+        self.detail = detail
+        super().__init__(f"{model_name} already exists: {detail}")
+
+
 class InvalidFilterError(ModelError):
     """Raised when invalid filter is provided."""
 

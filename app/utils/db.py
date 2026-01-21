@@ -93,6 +93,9 @@ class DatabaseManager:
     async def verify_connection(self) -> bool:
         """Verify database connection is working.
 
+        Uses session from pool instead of raw connection to ensure
+        proper connection lifecycle management.
+
         Returns:
             True if connection is successful, False otherwise.
 
@@ -100,9 +103,9 @@ class DatabaseManager:
             Exception: If connection fails with detailed error.
         """
         try:
-            engine = self.init_engine()
-            async with engine.connect() as conn:
-                await conn.execute(text("SELECT 1"))
+            session_factory = self.init_session_factory()
+            async with session_factory() as session:
+                await session.execute(text("SELECT 1"))
             logger.info("Database connection verified successfully")
             return True
         except Exception as e:

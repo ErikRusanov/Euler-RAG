@@ -81,7 +81,7 @@ async def get_document(
     service: DocumentService = Depends(dependencies.document),
     s3: S3Storage = Depends(get_s3_storage),
 ) -> DocumentResponse:
-    """Get document by ID.
+    """Get document by ID with relationships.
 
     Args:
         document_id: Document ID to retrieve.
@@ -89,16 +89,29 @@ async def get_document(
         s3: S3 storage instance.
 
     Returns:
-        Document details with direct file URL.
+        Document details with direct file URL and related entity names.
 
     Raises:
         RecordNotFoundError: If document with given ID does not exist.
     """
-    document = await service.get_by_id_or_fail(document_id)
+    from app.exceptions import RecordNotFoundError
+
+    document = await service.get_with_relationships(document_id)
+    if not document:
+        raise RecordNotFoundError("Document", document_id)
+
     url = s3.get_file_url(document.s3_key)
 
     response = DocumentResponse.model_validate(document)
     response.url = url
+
+    # Add related entity names if loaded
+    if document.subject:
+        response.subject_name = document.subject.name
+        response.subject_semester = document.subject.semester
+    if document.teacher:
+        response.teacher_name = document.teacher.name
+
     return response
 
 
