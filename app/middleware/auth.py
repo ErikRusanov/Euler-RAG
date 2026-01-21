@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import get_settings
+from app.middleware.cookie_auth import COOKIE_NAME, verify_session_token
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,8 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     """Middleware to validate API key for protected endpoints.
 
     All endpoints under /api prefix require X-API-KEY header.
+    If request has valid session cookie, automatically injects X-API-KEY header.
+    This allows admin panel to make API requests without JavaScript reading cookie.
     Other endpoints (health, docs, root) are public.
     """
 
@@ -39,10 +42,28 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if not self.is_protected_path(request.url.path):
             return await call_next(request)
 
-        # Get and validate API key
-        api_key = request.headers.get("X-API-KEY") or request.headers.get("x-api-key")
         settings = get_settings()
 
+        # Get API key from header (if already present)
+        api_key = request.headers.get("X-API-KEY") or request.headers.get("x-api-key")
+
+        # If no API key in header, check for valid session cookie
+        if not api_key:
+            session_token = request.cookies.get(COOKIE_NAME)
+            if session_token and verify_session_token(session_token, settings.api_key):
+                # Valid session - automatically inject API key header
+                # Add header to scope (headers are lowercase in Starlette)
+                api_key_bytes = settings.api_key.encode()
+                request.scope["headers"].append((b"x-api-key", api_key_bytes))
+                # Also update request.headers for downstream handlers
+                # Note: request.headers is read-only, but we've added to scope
+                api_key = settings.api_key
+                logger.debug(
+                    "Auto-injected API key from session cookie",
+                    extra={"path": request.url.path},
+                )
+
+        # Validate API key
         if not api_key or not hmac.compare_digest(api_key, settings.api_key):
             logger.warning(
                 "Unauthorized request",

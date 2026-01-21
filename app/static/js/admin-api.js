@@ -1,41 +1,14 @@
 /** Admin API utilities for making authenticated requests to the backend API. */
 
 /**
- * Get a cookie value by name.
- * @param {string} name - Cookie name.
- * @returns {string|null} Cookie value or null if not found.
- */
-function getCookie(name) {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) {
-        return parts.pop().split(';').shift();
-    }
-    return null;
-}
-
-/**
- * Get API key from cookie.
- * @returns {string|null} API key or null if not found.
- */
-function getApiKey() {
-    return getCookie('euler_api_key');
-}
-
-/**
  * Make an authenticated API request.
+ * API key is automatically injected by APIKeyMiddleware from session cookie.
  * @param {string} url - API endpoint URL.
  * @param {RequestInit} options - Fetch options.
  * @returns {Promise<Response>} Fetch response.
  */
 async function apiRequest(url, options = {}) {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-        throw new Error('API key not found in cookies. Please log in again.');
-    }
-
     const headers = {
-        'X-API-KEY': apiKey,
         ...options.headers,
     };
 
@@ -155,7 +128,7 @@ function reloadDocumentsTable(queryParams = null) {
                 window.location.reload();
             }
         })
-        .catch(error => {
+        .catch((error) => {
             console.error('Failed to reload documents table:', error);
             window.location.reload();
         });
@@ -249,9 +222,7 @@ async function deleteDocumentWithConfirm(documentId, button) {
     }
 
     try {
-        console.log(`Deleting document ${documentId}...`);
         await deleteDocumentApi(documentId);
-        console.log(`Document ${documentId} deleted successfully`);
         reloadDocumentsTable();
     } catch (error) {
         console.error('Delete error:', error);
@@ -422,23 +393,16 @@ function hideLoadingOverlay() {
 
 /**
  * Upload a document file to the server.
+ * API key is automatically injected by APIKeyMiddleware from session cookie.
  * @param {File} file - File to upload.
  * @returns {Promise<Object>} Uploaded document data.
  */
 async function uploadDocument(file) {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-        throw new Error('API key not found in cookies. Please log in again.');
-    }
-
     const formData = new FormData();
     formData.append('file', file);
 
     const response = await fetch('/api/documents', {
         method: 'POST',
-        headers: {
-            'X-API-KEY': apiKey,
-        },
         body: formData,
     });
 
@@ -729,8 +693,6 @@ function initializeProgressTracking() {
 
 // Export functions for use in other scripts
 window.AdminAPI = {
-    getCookie,
-    getApiKey,
     apiRequest,
     getDocument,
     updateDocument,
@@ -755,6 +717,7 @@ window.AdminAPI = {
 };
 
 // Global functions for onclick handlers
+// Must be exported immediately (not in DOMContentLoaded) for inline onclick handlers
 window.viewDocument = viewDocument;
 window.deleteDocument = deleteDocumentWithConfirm;
 window.startDocumentProcessing = startDocumentProcessing;
