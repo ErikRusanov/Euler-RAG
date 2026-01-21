@@ -119,6 +119,13 @@ class BaseTaskHandler(ABC):
                 await db.commit()
                 return True
 
+            except asyncio.CancelledError:
+                await db.rollback()
+                logger.info(
+                    "Task cancelled",
+                    extra={"task_id": task.id},
+                )
+                raise
             except asyncio.TimeoutError:
                 await db.rollback()
                 raise TaskError(

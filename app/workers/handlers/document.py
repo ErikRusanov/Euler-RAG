@@ -83,10 +83,28 @@ class DocumentHandler(BaseTaskHandler):
 
         try:
             # Download PDF from S3 (run in thread to avoid blocking event loop)
-            pdf_bytes = await asyncio.to_thread(self._s3.download_file, document.s3_key)
+            # Add timeout to allow cancellation during shutdown
+            try:
+                pdf_bytes = await asyncio.wait_for(
+                    asyncio.to_thread(self._s3.download_file, document.s3_key),
+                    timeout=120.0,  # Max 2 minutes for S3 download
+                )
+            except asyncio.TimeoutError:
+                raise TaskError("S3 download timeout", retryable=True)
+            except asyncio.CancelledError:
+                # Propagate cancellation immediately
+                raise
 
             # Parse PDF in thread (CPU-bound operation)
-            total_pages = await asyncio.to_thread(self._count_pdf_pages, pdf_bytes)
+            try:
+                total_pages = await asyncio.wait_for(
+                    asyncio.to_thread(self._count_pdf_pages, pdf_bytes),
+                    timeout=60.0,
+                )
+            except asyncio.TimeoutError:
+                raise TaskError("PDF parsing timeout", retryable=True)
+            except asyncio.CancelledError:
+                raise
 
             logger.info(
                 "Processing document",
@@ -98,7 +116,10 @@ class DocumentHandler(BaseTaskHandler):
 
             # Process each page
             for page_num in range(1, total_pages + 1):
-                # Update progress
+                current_task = asyncio.current_task()
+                if current_task and current_task.cancelled():
+                    raise asyncio.CancelledError()
+
                 await self._progress.update(
                     Progress(
                         document_id=document_id,
@@ -110,7 +131,11 @@ class DocumentHandler(BaseTaskHandler):
                 )
 
                 # Simulate page processing (5 seconds delay)
-                await asyncio.sleep(PAGE_PROCESSING_DELAY_SECONDS)
+                # Use sleep with cancellation check
+                try:
+                    await asyncio.sleep(PAGE_PROCESSING_DELAY_SECONDS)
+                except asyncio.CancelledError:
+                    raise
 
             # Mark as ready
             document.status = DocumentStatus.READY
@@ -134,6 +159,8 @@ class DocumentHandler(BaseTaskHandler):
                 extra={"document_id": document_id},
             )
 
+        except asyncio.CancelledError:
+            raise
         except TaskError:
             raise
         except Exception as e:
