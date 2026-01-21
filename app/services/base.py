@@ -22,8 +22,9 @@ T = TypeVar("T", bound=BaseModel)
 class BaseService(Generic[T]):
     """Base service class managing database transactions for model operations.
 
-    Provides automatic transaction management using direct SQLAlchemy queries:
-    - Write operations (create, update, delete) automatically commit
+    Provides database operations with transaction management:
+    - Write operations (create, update, delete) flush changes but rely on
+      dependency's commit (e.g., get_db_session) for transaction commit
     - Read operations (get_by_id, get_all, find, count) don't commit
     - All errors trigger automatic rollback
 
@@ -31,9 +32,15 @@ class BaseService(Generic[T]):
         class UserService(BaseService[User]):
             model = User
 
-        service = UserService(db_session)
-        user = await service.create(name="John", email="john@example.com")
-        # Transaction is automatically committed
+        # When used with get_db_session dependency, commit is automatic
+        @router.post("/users")
+        async def create_user(
+            data: UserCreate,
+            db: AsyncSession = Depends(get_db_session)
+        ):
+            service = UserService(db)
+            user = await service.create(**data.model_dump())
+            # Transaction is committed by get_db_session dependency
 
     Attributes:
         db: Database session for operations
@@ -51,7 +58,10 @@ class BaseService(Generic[T]):
         self.db = db
 
     async def create(self, **kwargs: Any) -> T:
-        """Create a new record and commit transaction.
+        """Create a new record.
+
+        Flushes changes to database but relies on dependency's commit
+        for transaction commit (e.g., get_db_session dependency).
 
         Args:
             **kwargs: Model attributes
@@ -68,7 +78,6 @@ class BaseService(Generic[T]):
             self.db.add(instance)
             await self.db.flush()
             await self.db.refresh(instance)
-            await self.db.commit()
             logger.debug(
                 f"Created {self.model.__name__}",
                 extra={"model": self.model.__name__, "id": instance.id},
@@ -265,7 +274,10 @@ class BaseService(Generic[T]):
             ) from e
 
     async def update(self, record_id: int, **kwargs: Any) -> T:
-        """Update a record and commit transaction.
+        """Update a record.
+
+        Flushes changes to database but relies on dependency's commit
+        for transaction commit (e.g., get_db_session dependency).
 
         Args:
             record_id: Primary key ID of record to update
@@ -289,7 +301,6 @@ class BaseService(Generic[T]):
                 setattr(record, key, value)
             await self.db.flush()
             await self.db.refresh(record)
-            await self.db.commit()
             logger.debug(
                 f"Updated {self.model.__name__}",
                 extra={"model": self.model.__name__, "id": record_id},
@@ -318,7 +329,10 @@ class BaseService(Generic[T]):
             ) from e
 
     async def delete(self, record_id: int) -> None:
-        """Delete a record and commit transaction.
+        """Delete a record.
+
+        Flushes changes to database but relies on dependency's commit
+        for transaction commit (e.g., get_db_session dependency).
 
         Args:
             record_id: Primary key ID of record to delete
@@ -331,7 +345,6 @@ class BaseService(Generic[T]):
             record = await self.get_by_id_or_fail(record_id)
             await self.db.delete(record)
             await self.db.flush()
-            await self.db.commit()
             logger.debug(
                 f"Deleted {self.model.__name__}",
                 extra={"model": self.model.__name__, "id": record_id},

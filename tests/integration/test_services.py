@@ -26,10 +26,11 @@ class UserService(BaseService[IntegrationUser]):
 
 @pytest.mark.asyncio
 async def test_create_commits_automatically(db_session: AsyncSession):
-    """Create operation commits transaction."""
+    """Create operation flushes changes to database."""
     service = UserService(db_session)
 
     user = await service.create(name="John", email="john@example.com")
+    await db_session.commit()
 
     assert user.id is not None
     found = await service.get_by_id(user.id)
@@ -42,6 +43,7 @@ async def test_create_rollback_on_constraint_violation(db_session: AsyncSession)
     """Create rolls back on unique constraint violation."""
     service = UserService(db_session)
     await service.create(name="John", email="john@example.com")
+    await db_session.commit()
 
     with pytest.raises(DatabaseConnectionError):
         await service.create(name="Jane", email="john@example.com")
@@ -52,11 +54,13 @@ async def test_create_rollback_on_constraint_violation(db_session: AsyncSession)
 
 @pytest.mark.asyncio
 async def test_update_commits_automatically(db_session: AsyncSession):
-    """Update operation commits transaction."""
+    """Update operation flushes changes to database."""
     service = UserService(db_session)
     user = await service.create(name="Old", email="user@example.com")
+    await db_session.commit()
 
     updated = await service.update(user.id, name="New")
+    await db_session.commit()
 
     assert updated.name == "New"
     found = await service.get_by_id(user.id)
@@ -69,6 +73,7 @@ async def test_update_rollback_on_constraint_violation(db_session: AsyncSession)
     service = UserService(db_session)
     await service.create(name="User1", email="user1@example.com")
     user2 = await service.create(name="User2", email="user2@example.com")
+    await db_session.commit()
     user2_id = user2.id  # Save id before potential session invalidation
 
     with pytest.raises(DatabaseConnectionError):
@@ -80,12 +85,14 @@ async def test_update_rollback_on_constraint_violation(db_session: AsyncSession)
 
 @pytest.mark.asyncio
 async def test_delete_commits_automatically(db_session: AsyncSession):
-    """Delete operation commits transaction."""
+    """Delete operation flushes changes to database."""
     service = UserService(db_session)
     user = await service.create(name="Delete Me", email="delete@example.com")
+    await db_session.commit()
     user_id = user.id
 
     await service.delete(user_id)
+    await db_session.commit()
 
     found = await service.get_by_id(user_id)
     assert found is None
@@ -96,6 +103,7 @@ async def test_get_by_id_returns_existing(db_session: AsyncSession):
     """get_by_id returns existing record."""
     service = UserService(db_session)
     user = await service.create(name="Test", email="test@example.com")
+    await db_session.commit()
 
     found = await service.get_by_id(user.id)
 
@@ -130,6 +138,7 @@ async def test_get_all_with_pagination(db_session: AsyncSession):
     service = UserService(db_session)
     for i in range(5):
         await service.create(name=f"User{i}", email=f"user{i}@example.com")
+    await db_session.commit()
 
     page1 = await service.get_all(limit=2, offset=0)
     page2 = await service.get_all(limit=2, offset=2)
@@ -146,6 +155,7 @@ async def test_find_filters_records(db_session: AsyncSession):
     await service.create(name="Alice", email="alice@example.com")
     await service.create(name="Bob", email="bob@example.com")
     await service.create(name="Alice", email="alice2@example.com")
+    await db_session.commit()
 
     found = await service.find(name="Alice")
 
@@ -168,6 +178,7 @@ async def test_count_counts_records(db_session: AsyncSession):
     service = UserService(db_session)
     await service.create(name="Alice", email="alice@example.com")
     await service.create(name="Bob", email="bob@example.com")
+    await db_session.commit()
 
     total = await service.count()
     alice_count = await service.count(name="Alice")
@@ -181,6 +192,7 @@ async def test_update_raises_for_invalid_attribute(db_session: AsyncSession):
     """update raises InvalidFilterError for invalid attribute."""
     service = UserService(db_session)
     user = await service.create(name="Test", email="test@example.com")
+    await db_session.commit()
 
     with pytest.raises(InvalidFilterError):
         await service.update(user.id, invalid_field="value")
