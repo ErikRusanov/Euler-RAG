@@ -202,3 +202,77 @@ async def test_delete_raises_for_missing_record(db_session: AsyncSession):
 
     with pytest.raises(RecordNotFoundError):
         await service.delete(9999)
+
+
+@pytest.mark.asyncio
+async def test_subject_service_get_with_documents(
+    db_session: AsyncSession,
+):
+    """get_with_documents returns only subjects that have documents."""
+    from app.models.document import Document, DocumentStatus
+    from app.models.subject import Subject
+    from app.models.teacher import Teacher
+    from app.services.subject_service import SubjectService
+
+    subject_with_doc = Subject(name="Mathematics", semester=1)
+    subject_without_doc = Subject(name="Physics", semester=1)
+    db_session.add(subject_with_doc)
+    db_session.add(subject_without_doc)
+    await db_session.flush()
+
+    teacher = Teacher(name="Dr. Smith")
+    db_session.add(teacher)
+    await db_session.flush()
+
+    document = Document(
+        subject_id=subject_with_doc.id,
+        teacher_id=teacher.id,
+        filename="math.pdf",
+        s3_key="documents/math.pdf",
+        status=DocumentStatus.UPLOADED,
+    )
+    db_session.add(document)
+    await db_session.commit()
+
+    service = SubjectService(db_session)
+    subjects = await service.get_with_documents()
+
+    assert len(subjects) == 1
+    assert subjects[0].id == subject_with_doc.id
+
+
+@pytest.mark.asyncio
+async def test_teacher_service_get_with_documents(
+    db_session: AsyncSession,
+):
+    """get_with_documents returns only teachers that have documents."""
+    from app.models.document import Document, DocumentStatus
+    from app.models.subject import Subject
+    from app.models.teacher import Teacher
+    from app.services.teacher_service import TeacherService
+
+    teacher_with_doc = Teacher(name="Dr. Smith")
+    teacher_without_doc = Teacher(name="Dr. Johnson")
+    db_session.add(teacher_with_doc)
+    db_session.add(teacher_without_doc)
+    await db_session.flush()
+
+    subject = Subject(name="Mathematics", semester=1)
+    db_session.add(subject)
+    await db_session.flush()
+
+    document = Document(
+        subject_id=subject.id,
+        teacher_id=teacher_with_doc.id,
+        filename="lecture.pdf",
+        s3_key="documents/lecture.pdf",
+        status=DocumentStatus.UPLOADED,
+    )
+    db_session.add(document)
+    await db_session.commit()
+
+    service = TeacherService(db_session)
+    teachers = await service.get_with_documents()
+
+    assert len(teachers) == 1
+    assert teachers[0].id == teacher_with_doc.id

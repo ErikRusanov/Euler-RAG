@@ -4,8 +4,18 @@ This service extends BaseService to provide CRUD operations for Teacher model.
 All filtering by name is handled through inherited find() method.
 """
 
+import logging
+from typing import List
+
+from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
+
+from app.exceptions import DatabaseConnectionError
+from app.models.document import Document
 from app.models.teacher import Teacher
 from app.services.base import BaseService
+
+logger = logging.getLogger(__name__)
 
 
 class TeacherService(BaseService[Teacher]):
@@ -20,6 +30,7 @@ class TeacherService(BaseService[Teacher]):
     - count(name=...): Count teachers
     - update(id, **kwargs): Update teacher
     - delete(id): Delete teacher
+    - get_with_documents(): Get only teachers that have documents
 
     Usage:
         service = TeacherService(db_session)
@@ -30,8 +41,8 @@ class TeacherService(BaseService[Teacher]):
         # Find by filters
         teachers = await service.find(name="Dr. Alexander Smith")
 
-        # Update
-        updated = await service.update(teacher.id, name="Professor Smith")
+        # Get only teachers with documents (for filters)
+        teachers_with_docs = await service.get_with_documents()
 
     Attributes:
         model: Teacher model class
@@ -39,3 +50,34 @@ class TeacherService(BaseService[Teacher]):
     """
 
     model = Teacher
+
+    async def get_with_documents(self) -> List[Teacher]:
+        """Get only teachers that have at least one document.
+
+        Optimized query using DISTINCT to avoid loading all teachers.
+        Only returns teachers that are referenced by documents.
+
+        Returns:
+            List of Teacher instances that have documents.
+
+        Raises:
+            DatabaseConnectionError: If database operation fails.
+        """
+        try:
+            stmt = (
+                select(Teacher)
+                .join(Document, Teacher.id == Document.teacher_id)
+                .distinct()
+                .order_by(Teacher.name)
+            )
+            result = await self.db.execute(stmt)
+            return list(result.scalars().all())
+        except (DBAPIError, SQLAlchemyError) as e:
+            logger.error(
+                "Failed to get teachers with documents",
+                extra={"error": str(e)},
+                exc_info=True,
+            )
+            raise DatabaseConnectionError(
+                f"Database error during get_with_documents: {str(e)}"
+            ) from e

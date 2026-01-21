@@ -66,11 +66,12 @@ async def admin_documents(
         teacher_id=teacher_id,
     )
 
-    # Get filter options
+    # Get filter options - only load subjects/teachers that have documents
+    # This avoids loading 10K+ objects when most are unused
     subject_service = SubjectService(db)
     teacher_service = TeacherService(db)
-    subjects = await subject_service.get_all()
-    teachers = await teacher_service.get_all()
+    subjects = await subject_service.get_with_documents()
+    teachers = await teacher_service.get_with_documents()
 
     # Build context
     context = {
