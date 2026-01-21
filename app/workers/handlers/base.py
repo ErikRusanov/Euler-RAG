@@ -94,6 +94,12 @@ class BaseTaskHandler(ABC):
         Creates database session, handles timeouts, and manages
         transaction commit/rollback.
 
+        Transaction management:
+        - Success: commits transaction
+        - TaskError with retryable=True: rollbacks (allows retry with clean state)
+        - TaskError with retryable=False: commits (persists error state)
+        - Unexpected exceptions: rollbacks (safe default)
+
         Args:
             task: Task to execute.
 
@@ -119,8 +125,11 @@ class BaseTaskHandler(ABC):
                     f"Task timed out after {self.TIMEOUT_SECONDS}s",
                     retryable=True,
                 )
-            except TaskError:
-                await db.rollback()
+            except TaskError as e:
+                if e.retryable:
+                    await db.rollback()
+                else:
+                    await db.commit()
                 raise
             except Exception as e:
                 await db.rollback()

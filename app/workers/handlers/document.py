@@ -139,7 +139,6 @@ class DocumentHandler(BaseTaskHandler):
         except Exception as e:
             document.status = DocumentStatus.ERROR
             document.error = str(e)
-            await db.commit()
 
             await self._progress.update(
                 Progress(
