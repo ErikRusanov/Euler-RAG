@@ -6,7 +6,6 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import RedirectResponse, StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import RecordNotFoundError
 from app.models.document import DocumentStatus
@@ -14,7 +13,7 @@ from app.services.document_service import DocumentService
 from app.services.subject_service import SubjectService
 from app.services.teacher_service import TeacherService
 from app.utils.api_helpers import get_pagination_context, get_progress_tracker
-from app.utils.db import get_db_session
+from app.utils.dependencies import dependencies
 from app.utils.templates import templates
 from app.workers.progress import ProgressTracker
 
@@ -26,7 +25,9 @@ router = APIRouter(tags=["admin"])
 @router.get("/admin/documents")
 async def admin_documents(
     request: Request,
-    db: AsyncSession = Depends(get_db_session),
+    document_service: DocumentService = Depends(dependencies.document),
+    subject_service: SubjectService = Depends(dependencies.subject),
+    teacher_service: TeacherService = Depends(dependencies.teacher),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=10, le=100),
     status_filter: Optional[str] = Query(default=None, alias="status"),
@@ -37,7 +38,9 @@ async def admin_documents(
 
     Args:
         request: FastAPI request object.
-        db: Database session.
+        document_service: DocumentService instance.
+        subject_service: SubjectService instance.
+        teacher_service: TeacherService instance.
         page: Current page number.
         page_size: Number of items per page.
         status_filter: Filter by document status.
@@ -56,7 +59,6 @@ async def admin_documents(
             logger.warning(f"Invalid status filter: {status_filter}")
 
     # Get documents with relationships
-    document_service = DocumentService(db)
     skip = (page - 1) * page_size
     documents, total = await document_service.list_with_relationships(
         skip=skip,
@@ -68,8 +70,6 @@ async def admin_documents(
 
     # Get filter options - only load subjects/teachers that have documents
     # This avoids loading 10K+ objects when most are unused
-    subject_service = SubjectService(db)
-    teacher_service = TeacherService(db)
     subjects = await subject_service.get_with_documents()
     teachers = await teacher_service.get_with_documents()
 
@@ -163,14 +163,14 @@ async def admin_root() -> RedirectResponse:
 @router.get("/admin/api/documents/{document_id}/progress")
 async def stream_document_progress(
     document_id: int,
-    db: AsyncSession = Depends(get_db_session),
+    document_service: DocumentService = Depends(dependencies.document),
     progress_tracker: ProgressTracker = Depends(get_progress_tracker),
 ) -> StreamingResponse:
     """Stream document processing progress via Server-Sent Events.
 
     Args:
         document_id: Document ID to track progress for.
-        db: Database session.
+        document_service: DocumentService instance.
         progress_tracker: ProgressTracker instance.
 
     Returns:
@@ -180,7 +180,6 @@ async def stream_document_progress(
     async def event_generator():
         # Check document status from database
         # If document is already processing, send status update immediately
-        document_service = DocumentService(db)
         try:
             document = await document_service.get_by_id(document_id)
             if document and document.status == DocumentStatus.PROCESSING:

@@ -67,67 +67,53 @@ class TestUpdateDocumentEnqueueFailure:
                     with patch("app.application.close_s3"):
                         app = create_app()
 
-                        # Mock DB session
-                        mock_db = MagicMock()
-                        mock_db.commit = AsyncMock()
-                        mock_db.rollback = AsyncMock()
+                        # Mock service
+                        mock_service = MagicMock()
+                        mock_service.get_by_id_or_fail = AsyncMock(
+                            return_value=mock_document
+                        )
+                        mock_service.update_document = AsyncMock(
+                            return_value=mock_updated_document
+                        )
 
-                        # Mock service methods
-                        with patch(
-                            "app.api.documents.DocumentService"
-                        ) as mock_service_class:
-                            mock_service = MagicMock()
-                            mock_service_class.return_value = mock_service
-
-                            # First call returns UPLOADED doc, second call
-                            # returns PENDING doc
-                            mock_service.get_by_id_or_fail = AsyncMock(
-                                return_value=mock_document
-                            )
-                            mock_service.update_document = AsyncMock(
-                                return_value=mock_updated_document
+                        # Mock TaskQueue.enqueue to fail
+                        with patch("app.api.documents.TaskQueue") as mock_queue_class:
+                            mock_queue = MagicMock()
+                            mock_queue_class.return_value = mock_queue
+                            mock_queue.enqueue = AsyncMock(
+                                side_effect=Exception("Redis connection failed")
                             )
 
-                            # Mock TaskQueue.enqueue to fail
-                            with patch(
-                                "app.api.documents.TaskQueue"
-                            ) as mock_queue_class:
-                                mock_queue = MagicMock()
-                                mock_queue_class.return_value = mock_queue
-                                mock_queue.enqueue = AsyncMock(
-                                    side_effect=Exception("Redis connection failed")
+                            # Override dependencies
+                            from app.utils.dependencies import dependencies
+
+                            def override_document_service():
+                                return mock_service
+
+                            app.dependency_overrides[dependencies.document] = (
+                                override_document_service
+                            )
+
+                            transport = ASGITransport(app=app)
+                            async with AsyncClient(
+                                transport=transport, base_url="http://test"
+                            ) as client:
+                                response = await client.patch(
+                                    "/api/documents/1",
+                                    json={"status": "pending"},
+                                    headers={"X-API-KEY": settings.api_key},
                                 )
 
-                                # Override DB session dependency
-                                from app.utils.db import get_db_session
-
-                                async def override_get_db_session():
-                                    yield mock_db
-
-                                app.dependency_overrides[get_db_session] = (
-                                    override_get_db_session
+                                # Should return 503 Service Unavailable,
+                                # not 200 OK
+                                assert (
+                                    response.status_code
+                                    == status.HTTP_503_SERVICE_UNAVAILABLE
                                 )
+                                data = response.json()
+                                assert data["error"] == "Service Unavailable"
 
-                                transport = ASGITransport(app=app)
-                                async with AsyncClient(
-                                    transport=transport, base_url="http://test"
-                                ) as client:
-                                    response = await client.patch(
-                                        "/api/documents/1",
-                                        json={"status": "pending"},
-                                        headers={"X-API-KEY": settings.api_key},
-                                    )
-
-                                    # Should return 503 Service Unavailable,
-                                    # not 200 OK
-                                    assert (
-                                        response.status_code
-                                        == status.HTTP_503_SERVICE_UNAVAILABLE
-                                    )
-                                    data = response.json()
-                                    assert data["error"] == "Service Unavailable"
-
-                                app.dependency_overrides.clear()
+                            app.dependency_overrides.clear()
 
     @pytest.mark.asyncio
     async def test_update_document_enqueue_failure_rolls_back_status(
@@ -144,62 +130,53 @@ class TestUpdateDocumentEnqueueFailure:
                     with patch("app.application.close_s3"):
                         app = create_app()
 
-                        mock_db = MagicMock()
-                        mock_db.commit = AsyncMock()
-                        mock_db.rollback = AsyncMock()
+                        # Mock service
+                        mock_service = MagicMock()
+                        mock_service.get_by_id_or_fail = AsyncMock(
+                            return_value=mock_document
+                        )
+                        mock_service.update_document = AsyncMock(
+                            return_value=mock_updated_document
+                        )
 
-                        with patch(
-                            "app.api.documents.DocumentService"
-                        ) as mock_service_class:
-                            mock_service = MagicMock()
-                            mock_service_class.return_value = mock_service
-
-                            mock_service.get_by_id_or_fail = AsyncMock(
-                                return_value=mock_document
+                        with patch("app.api.documents.TaskQueue") as mock_queue_class:
+                            mock_queue = MagicMock()
+                            mock_queue_class.return_value = mock_queue
+                            mock_queue.enqueue = AsyncMock(
+                                side_effect=Exception("Redis connection failed")
                             )
-                            mock_service.update_document = AsyncMock(
-                                return_value=mock_updated_document
+
+                            # Override dependencies
+                            from app.utils.dependencies import dependencies
+
+                            def override_document_service():
+                                return mock_service
+
+                            app.dependency_overrides[dependencies.document] = (
+                                override_document_service
                             )
 
-                            with patch(
-                                "app.api.documents.TaskQueue"
-                            ) as mock_queue_class:
-                                mock_queue = MagicMock()
-                                mock_queue_class.return_value = mock_queue
-                                mock_queue.enqueue = AsyncMock(
-                                    side_effect=Exception("Redis connection failed")
+                            transport = ASGITransport(app=app)
+                            async with AsyncClient(
+                                transport=transport, base_url="http://test"
+                            ) as client:
+                                await client.patch(
+                                    "/api/documents/1",
+                                    json={"status": "pending"},
+                                    headers={"X-API-KEY": settings.api_key},
                                 )
 
-                                from app.utils.db import get_db_session
+                                # Verify update_document was called twice:
+                                # 1. To set status to PENDING
+                                # 2. To rollback status to UPLOADED
+                                calls = mock_service.update_document.call_args_list
+                                assert len(calls) >= 2
 
-                                async def override_get_db_session():
-                                    yield mock_db
-
-                                app.dependency_overrides[get_db_session] = (
-                                    override_get_db_session
+                                # Second call should rollback to UPLOADED
+                                rollback_call = calls[1]
+                                assert (
+                                    rollback_call.kwargs.get("status")
+                                    == DocumentStatus.UPLOADED
                                 )
 
-                                transport = ASGITransport(app=app)
-                                async with AsyncClient(
-                                    transport=transport, base_url="http://test"
-                                ) as client:
-                                    await client.patch(
-                                        "/api/documents/1",
-                                        json={"status": "pending"},
-                                        headers={"X-API-KEY": settings.api_key},
-                                    )
-
-                                    # Verify update_document was called twice:
-                                    # 1. To set status to PENDING
-                                    # 2. To rollback status to UPLOADED
-                                    calls = mock_service.update_document.call_args_list
-                                    assert len(calls) >= 2
-
-                                    # Second call should rollback to UPLOADED
-                                    rollback_call = calls[1]
-                                    assert (
-                                        rollback_call.kwargs.get("status")
-                                        == DocumentStatus.UPLOADED
-                                    )
-
-                                app.dependency_overrides.clear()
+                            app.dependency_overrides.clear()

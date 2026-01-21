@@ -4,13 +4,12 @@ import logging
 
 from fastapi import APIRouter, Depends, UploadFile
 from fastapi import status as http_status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import TaskEnqueueError
 from app.models.document import DocumentStatus
 from app.schemas.document import DocumentResponse, DocumentUpdate
 from app.services.document_service import DocumentService
-from app.utils.db import get_db_session
+from app.utils.dependencies import dependencies
 from app.utils.redis import get_redis_client
 from app.utils.s3 import S3Storage, get_s3_storage
 from app.workers.queue import TaskQueue, TaskType
@@ -26,11 +25,10 @@ router = APIRouter(
 @router.post("", status_code=http_status.HTTP_201_CREATED)
 async def create_document(
     file: UploadFile,
-    db: AsyncSession = Depends(get_db_session),
+    service: DocumentService = Depends(dependencies.document),
     s3: S3Storage = Depends(get_s3_storage),
 ) -> DocumentResponse:
     """Upload a PDF document."""
-    service = DocumentService(db)
     document = await service.upload_pdf(
         s3=s3,
         file_data=file.file,
@@ -50,7 +48,7 @@ async def list_documents(
     teacher_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
-    db: AsyncSession = Depends(get_db_session),
+    service: DocumentService = Depends(dependencies.document),
 ) -> list[DocumentResponse]:
     """List documents with optional filters and pagination.
 
@@ -60,12 +58,11 @@ async def list_documents(
         teacher_id: Filter by teacher ID.
         limit: Maximum number of documents to return.
         offset: Number of documents to skip.
-        db: Database session.
+        service: DocumentService instance.
 
     Returns:
         List of documents matching the filters.
     """
-    service = DocumentService(db)
     filters = {}
     if status is not None:
         filters["status"] = status
@@ -81,14 +78,14 @@ async def list_documents(
 @router.get("/{document_id}")
 async def get_document(
     document_id: int,
-    db: AsyncSession = Depends(get_db_session),
+    service: DocumentService = Depends(dependencies.document),
     s3: S3Storage = Depends(get_s3_storage),
 ) -> DocumentResponse:
     """Get document by ID.
 
     Args:
         document_id: Document ID to retrieve.
-        db: Database session.
+        service: DocumentService instance.
         s3: S3 storage instance.
 
     Returns:
@@ -97,7 +94,6 @@ async def get_document(
     Raises:
         RecordNotFoundError: If document with given ID does not exist.
     """
-    service = DocumentService(db)
     document = await service.get_by_id_or_fail(document_id)
     url = s3.get_file_url(document.s3_key)
 
@@ -110,10 +106,9 @@ async def get_document(
 async def update_document(
     document_id: int,
     data: DocumentUpdate,
-    db: AsyncSession = Depends(get_db_session),
+    service: DocumentService = Depends(dependencies.document),
 ) -> DocumentResponse:
     """Update document fields."""
-    service = DocumentService(db)
 
     current_document = await service.get_by_id_or_fail(document_id)
     update_data = data.model_dump(exclude_unset=True)
@@ -158,9 +153,8 @@ async def update_document(
 @router.delete("/{document_id}", status_code=http_status.HTTP_204_NO_CONTENT)
 async def delete_document(
     document_id: int,
-    db: AsyncSession = Depends(get_db_session),
+    service: DocumentService = Depends(dependencies.document),
     s3: S3Storage = Depends(get_s3_storage),
 ) -> None:
     """Delete document and its file from storage."""
-    service = DocumentService(db)
     await service.delete_with_file(s3, document_id)
