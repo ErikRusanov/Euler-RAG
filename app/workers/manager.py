@@ -144,12 +144,13 @@ class WorkerManager:
                     continue
 
                 try:
-                    await handler.execute(task)
-                    await queue.ack(task)
-                    logger.info(
-                        "Task completed",
-                        extra={"task_id": task.id, "type": task.type.value},
-                    )
+                    success = await handler.execute(task)
+                    if success:
+                        await queue.ack(task)
+                        logger.info(
+                            "Task completed",
+                            extra={"task_id": task.id, "type": task.type.value},
+                        )
 
                 except TaskError as e:
                     logger.warning(

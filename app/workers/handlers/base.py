@@ -88,7 +88,7 @@ class BaseTaskHandler(ABC):
             **extra_fields: Additional fields to update.
         """
 
-    async def execute(self, task: Task) -> None:
+    async def execute(self, task: Task) -> bool:
         """Execute task with timeout and error handling.
 
         Creates database session, handles timeouts, and manages
@@ -96,6 +96,10 @@ class BaseTaskHandler(ABC):
 
         Args:
             task: Task to execute.
+
+        Returns:
+            True if task completed successfully and transaction was committed.
+            False if task failed (transaction rolled back).
 
         Raises:
             TaskError: If task processing fails.
@@ -107,6 +111,7 @@ class BaseTaskHandler(ABC):
                     timeout=self.TIMEOUT_SECONDS,
                 )
                 await db.commit()
+                return True
 
             except asyncio.TimeoutError:
                 await db.rollback()
