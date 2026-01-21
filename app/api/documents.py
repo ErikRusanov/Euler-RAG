@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, UploadFile
 from fastapi import status as http_status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions import TaskEnqueueError
 from app.models.document import DocumentStatus
 from app.schemas.document import DocumentResponse, DocumentUpdate
 from app.services.document_service import DocumentService
@@ -142,6 +143,13 @@ async def update_document(
                 "Failed to enqueue document processing task",
                 extra={"document_id": document_id, "error": str(e)},
                 exc_info=True,
+            )
+            # Rollback status to UPLOADED to prevent document being stuck in PENDING
+            await service.update_document(document_id, status=DocumentStatus.UPLOADED)
+            raise TaskEnqueueError(
+                task_type=TaskType.DOCUMENT_PROCESS.value,
+                resource_id=document_id,
+                original_error=str(e),
             )
 
     return DocumentResponse.model_validate(updated_document)

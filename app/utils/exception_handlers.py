@@ -16,6 +16,7 @@ from app.exceptions import (
     RecordNotFoundError,
     RelatedRecordNotFoundError,
     S3OperationError,
+    TaskEnqueueError,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,12 @@ EXCEPTION_CONFIGS: dict[type[Exception], ExceptionConfig] = {
         log_level="error",
         include_detail=False,
     ),
+    TaskEnqueueError: ExceptionConfig(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        error_name="Service Unavailable",
+        log_level="error",
+        include_detail=False,
+    ),
 }
 
 
@@ -93,6 +100,10 @@ def _build_response_content(exc: Exception, config: ExceptionConfig) -> dict[str
         content["message"] = "Database connection error. Please try again later."
     elif isinstance(exc, S3OperationError):
         content["message"] = "Failed to process file in storage"
+    elif isinstance(exc, TaskEnqueueError):
+        content["message"] = (
+            "Failed to schedule background task. Please try again later."
+        )
     elif config.include_detail:
         content["message"] = str(exc)
 

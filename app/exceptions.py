@@ -60,3 +60,27 @@ class RedisConnectionError(AppError):
 
 class RedisOperationError(AppError):
     """Raised when Redis operation fails."""
+
+
+class TaskEnqueueError(AppError):
+    """Raised when task enqueueing to Redis fails.
+
+    This exception is raised when a background task cannot be enqueued,
+    indicating that the requested operation could not be scheduled.
+    """
+
+    def __init__(self, task_type: str, resource_id: int, original_error: str):
+        """Initialize TaskEnqueueError.
+
+        Args:
+            task_type: Type of task that failed to enqueue.
+            resource_id: ID of the resource the task was for.
+            original_error: Original error message from the queue.
+        """
+        self.task_type = task_type
+        self.resource_id = resource_id
+        self.original_error = original_error
+        super().__init__(
+            f"Failed to enqueue {task_type} task for resource {resource_id}: "
+            f"{original_error}"
+        )
