@@ -99,3 +99,22 @@ class TaskEnqueueError(AppError):
             f"Failed to enqueue {task_type} task for resource {resource_id}: "
             f"{original_error}"
         )
+
+
+class MathpixError(AppError):
+    """Raised for Mathpix API errors.
+
+    Attributes:
+        message: Error description.
+        retryable: Whether the error is transient and can be retried.
+    """
+
+    def __init__(self, message: str, retryable: bool = True) -> None:
+        """Initialize MathpixError.
+
+        Args:
+            message: Error description.
+            retryable: Whether the error is transient and can be retried.
+        """
+        super().__init__(message)
+        self.retryable = retryable

@@ -114,6 +114,16 @@ class Settings(BaseSettings):
         description="Replicate API token for Nougat OCR processing",
     )
 
+    # Mathpix OCR Settings
+    mathpix_app_id: str = Field(
+        default="",
+        description="Mathpix application ID for PDF OCR processing",
+    )
+    mathpix_app_key: str = Field(
+        default="",
+        description="Mathpix application key for PDF OCR processing",
+    )
+
     @field_validator("db_password")
     @classmethod
     def validate_db_password_in_production(cls, v: str, info) -> str:
