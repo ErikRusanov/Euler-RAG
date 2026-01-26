@@ -9,6 +9,7 @@ import logging
 
 from app.config import get_settings
 from app.utils.db import db_manager
+from app.utils.nougat import get_nougat_client
 from app.utils.redis import get_redis_client
 from app.utils.s3 import get_s3_storage
 from app.workers.handlers.base import BaseTaskHandler, TaskError
@@ -61,12 +62,14 @@ class WorkerManager:
         # Initialize handlers with dependencies
         session_factory = db_manager.session_factory
         s3 = get_s3_storage()
+        nougat = get_nougat_client()
 
         self._handlers = {
             TaskType.DOCUMENT_PROCESS: DocumentHandler(
                 session_factory=session_factory,
                 s3=s3,
                 progress_tracker=progress_tracker,
+                nougat_client=nougat,
             ),
         }
 

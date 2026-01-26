@@ -230,7 +230,13 @@ class TestDocumentProcessingFlow:
         await db_session.refresh(document)
         assert document.status == DocumentStatus.READY
         assert document.processed_at is not None
-        assert document.progress == {"page": 2, "total": 2}
+        # Nougat is skipped when no client is provided
+        assert document.progress == {
+            "page": 2,
+            "total": 2,
+            "nougat_status": "skipped",
+            "nougat_text": None,
+        }
 
     @pytest.mark.asyncio
     async def test_document_processing_handles_errors(

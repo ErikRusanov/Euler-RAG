@@ -108,6 +108,12 @@ class Settings(BaseSettings):
         description="Number of concurrent worker tasks",
     )
 
+    # Replicate (Nougat OCR) Settings
+    replicate_api_token: str = Field(
+        default="",
+        description="Replicate API token for Nougat OCR processing",
+    )
+
     @field_validator("db_password")
     @classmethod
     def validate_db_password_in_production(cls, v: str, info) -> str:
