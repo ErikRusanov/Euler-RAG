@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+import tiktoken
+
 from app.models.document_line import DocumentLine
 
 
@@ -57,7 +59,19 @@ class ChunkingService:
     MAX_TOKENS = 2000
     CONTEXT_HEADER_MAX_TOKENS = 500
 
-    # LaTeX environment patterns
+    # Section level hierarchy
+    SECTION_LEVELS = {"section": 1, "subsection": 2, "subsubsection": 3}
+
+    # LaTeX environment patterns (structural blocks only)
+    STRUCTURAL_ENVS = {
+        "theorem",
+        "proof",
+        "definition",
+        "lemma",
+        "corollary",
+        "example",
+        "remark",
+    }
     BEGIN_ENV_PATTERN = re.compile(
         r"\\begin\{(theorem|proof|definition|lemma|corollary|example|remark)\}",
         re.IGNORECASE,
@@ -67,10 +81,13 @@ class ChunkingService:
         re.IGNORECASE,
     )
 
-    # Section patterns
+    # Section patterns - LaTeX style
     SECTION_PATTERN = re.compile(
         r"\\(section|subsection|subsubsection)\{([^}]+)\}", re.IGNORECASE
     )
+
+    # Markdown header patterns (Mathpix often outputs these)
+    MARKDOWN_HEADER_PATTERN = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
 
     # Russian keyword patterns (for documents without LaTeX environments)
     RUSSIAN_KEYWORDS = {
@@ -95,6 +112,11 @@ class ChunkingService:
             r"\\textbf\{Замечание\}|^Замечание\s+\d+", re.IGNORECASE
         ),
     }
+
+    def __init__(self) -> None:
+        """Initialize ChunkingService with tiktoken encoder."""
+        # Use cl100k_base encoding (GPT-4 compatible)
+        self._encoder = tiktoken.get_encoding("cl100k_base")
 
     def chunk_document_lines(self, lines: List[DocumentLine]) -> List[Dict[str, Any]]:
         """Chunk document lines into semantically coherent chunks.
@@ -130,6 +152,7 @@ class ChunkingService:
         """Parse lines into semantic blocks.
 
         Identifies LaTeX environments, section headers, and narrative text.
+        Uses stack-based approach to handle nested environments correctly.
 
         Args:
             lines: List of DocumentLine objects.
@@ -138,64 +161,85 @@ class ChunkingService:
             List of Block objects.
         """
         blocks: List[Block] = []
-        current_env: Optional[str] = None
+        env_stack: List[str] = []  # Stack for tracking nested environments
         current_block_lines: List[DocumentLine] = []
         current_block_type: Optional[BlockType] = None
 
         for line in lines:
             text = line.text.strip()
 
-            # Check for section headers
-            section_match = self.SECTION_PATTERN.search(text)
-            if section_match:
-                # Flush current block
-                if current_block_lines:
-                    blocks.append(
-                        self._create_block(
-                            current_block_type or BlockType.NARRATIVE,
-                            current_block_lines,
+            # Check for section headers (LaTeX or Markdown)
+            section_info = self._detect_section_header(text)
+            if section_info:
+                # Section headers only flush blocks if we're not inside a proof/theorem
+                if not env_stack:
+                    if current_block_lines:
+                        blocks.append(
+                            self._create_block(
+                                current_block_type or BlockType.NARRATIVE,
+                                current_block_lines,
+                            )
                         )
-                    )
-                    current_block_lines = []
-                    current_block_type = None
+                        current_block_lines = []
+                        current_block_type = None
 
-                # Add section header block
-                blocks.append(self._create_block(BlockType.SECTION_HEADER, [line]))
-                continue
+                    # Add section header block
+                    blocks.append(self._create_block(BlockType.SECTION_HEADER, [line]))
+                    continue
+                else:
+                    # Inside an environment, treat as content
+                    current_block_lines.append(line)
+                    continue
 
             # Check for environment begin
             begin_match = self.BEGIN_ENV_PATTERN.search(text)
             if begin_match:
-                # Flush current block
-                if current_block_lines:
-                    blocks.append(
-                        self._create_block(
-                            current_block_type or BlockType.NARRATIVE,
-                            current_block_lines,
-                        )
-                    )
-                    current_block_lines = []
+                env_name = begin_match.group(1).lower()
 
-                # Start new environment
-                current_env = begin_match.group(1).lower()
-                current_block_type = BlockType(current_env)
-                current_block_lines = [line]
+                # If not in any environment, start a new block
+                if not env_stack:
+                    # Flush current narrative block
+                    if current_block_lines:
+                        blocks.append(
+                            self._create_block(
+                                current_block_type or BlockType.NARRATIVE,
+                                current_block_lines,
+                            )
+                        )
+                        current_block_lines = []
+
+                    # Start new environment block
+                    current_block_type = BlockType(env_name)
+                    current_block_lines = [line]
+                    env_stack.append(env_name)
+                else:
+                    # Already inside an environment - this is nested
+                    # Just add line to current block, don't start new block
+                    current_block_lines.append(line)
+                    env_stack.append(env_name)
                 continue
 
             # Check for environment end
             end_match = self.END_ENV_PATTERN.search(text)
-            if end_match and current_env:
+            if end_match and env_stack:
+                end_env_name = end_match.group(1).lower()
                 current_block_lines.append(line)
-                blocks.append(
-                    self._create_block(current_block_type, current_block_lines)
-                )
-                current_block_lines = []
-                current_block_type = None
-                current_env = None
+
+                # Pop from stack (handle mismatched ends gracefully)
+                if env_stack and env_stack[-1] == end_env_name:
+                    env_stack.pop()
+
+                # If stack is empty, we've closed the outermost environment
+                if not env_stack:
+                    blocks.append(
+                        self._create_block(current_block_type, current_block_lines)
+                    )
+                    current_block_lines = []
+                    current_block_type = None
                 continue
 
-            # Check for Russian keywords (for documents without LaTeX envs)
-            if not current_env:
+            # Check for Russian keywords (only if not inside an environment)
+            if not env_stack:
                 detected_type = self._detect_russian_keyword(text)
                 if detected_type:
                     # Flush current block
@@ -214,13 +258,9 @@ class ChunkingService:
                     continue
 
             # Regular line within current block or narrative
-            if current_env or current_block_type:
-                current_block_lines.append(line)
-            else:
-                # Accumulate narrative text
-                current_block_lines.append(line)
-                if not current_block_type:
-                    current_block_type = BlockType.NARRATIVE
+            current_block_lines.append(line)
+            if not current_block_type and not env_stack:
+                current_block_type = BlockType.NARRATIVE
 
         # Flush remaining block
         if current_block_lines:
@@ -231,6 +271,37 @@ class ChunkingService:
             )
 
         return blocks
+
+    def _detect_section_header(self, text: str) -> Optional[Dict[str, Any]]:
+        """Detect section header in LaTeX or Markdown format.
+
+        Args:
+            text: Line text to check.
+
+        Returns:
+            Dict with 'level' and 'title' if detected, None otherwise.
+        """
+        # Check LaTeX style
+        latex_match = self.SECTION_PATTERN.search(text)
+        if latex_match:
+            level_name = latex_match.group(1).lower()
+            return {
+                "level": self.SECTION_LEVELS.get(level_name, 1),
+                "title": latex_match.group(2),
+                "style": "latex",
+            }
+
+        # Check Markdown style (## Header)
+        md_match = self.MARKDOWN_HEADER_PATTERN.match(text)
+        if md_match:
+            hashes = md_match.group(1)
+            return {
+                "level": len(hashes),
+                "title": md_match.group(2).strip(),
+                "style": "markdown",
+            }
+
+        return None
 
     def _detect_russian_keyword(self, text: str) -> Optional[BlockType]:
         """Detect Russian mathematical keywords in text.
@@ -269,6 +340,9 @@ class ChunkingService:
     def _group_blocks(self, blocks: List[Block]) -> List[Block]:
         """Group related blocks (theorem+proof, definition+example).
 
+        Allows small narrative gaps between theorem and proof for more
+        realistic grouping.
+
         Args:
             blocks: List of blocks to group.
 
@@ -284,37 +358,60 @@ class ChunkingService:
         while i < len(blocks):
             current = blocks[i]
 
-            # Check if next block should be grouped with current
-            if i + 1 < len(blocks):
-                next_block = blocks[i + 1]
+            # Check if current is a theorem/lemma/corollary that might be
+            # followed by a proof (possibly with small gap)
+            if current.block_type in (
+                BlockType.THEOREM,
+                BlockType.LEMMA,
+                BlockType.COROLLARY,
+            ):
+                # Look for proof within next 2 blocks (allowing 1 narrative gap)
+                proof_idx = None
+                gap_blocks: List[Block] = []
 
-                # Group theorem/lemma/corollary with proof
-                if (
-                    current.block_type
-                    in (
-                        BlockType.THEOREM,
-                        BlockType.LEMMA,
-                        BlockType.COROLLARY,
-                    )
-                    and next_block.block_type == BlockType.PROOF
-                ):
+                for j in range(i + 1, min(i + 3, len(blocks))):
+                    candidate = blocks[j]
+
+                    # Stop if we hit a section header
+                    if candidate.block_type == BlockType.SECTION_HEADER:
+                        break
+
+                    if candidate.block_type == BlockType.PROOF:
+                        proof_idx = j
+                        break
+                    elif candidate.block_type == BlockType.NARRATIVE:
+                        # Allow one small narrative gap (e.g., "Рассмотрим...")
+                        if self._count_tokens(candidate.text) < 100:
+                            gap_blocks.append(candidate)
+                        else:
+                            break
+                    else:
+                        # Hit another structural block, stop looking
+                        break
+
+                if proof_idx is not None:
+                    # Group theorem + gap + proof
+                    combined_text = current.text
+                    for gap in gap_blocks:
+                        combined_text += "\n\n" + gap.text
+                    combined_text += "\n\n" + blocks[proof_idx].text
+
                     grouped_block = Block(
                         block_type=BlockType.THEOREM_PROOF,
-                        text=f"{current.text}\n\n{next_block.text}",
+                        text=combined_text,
                         start_line_id=current.start_line_id,
-                        end_line_id=next_block.end_line_id,
+                        end_line_id=blocks[proof_idx].end_line_id,
                         start_page=current.start_page,
-                        end_page=next_block.end_page,
+                        end_page=blocks[proof_idx].end_page,
                     )
                     grouped.append(grouped_block)
-                    i += 2
+                    i = proof_idx + 1
                     continue
 
-                # Group definition with immediately following example
-                if (
-                    current.block_type == BlockType.DEFINITION
-                    and next_block.block_type == BlockType.EXAMPLE
-                ):
+            # Check for definition followed by example
+            if current.block_type == BlockType.DEFINITION and i + 1 < len(blocks):
+                next_block = blocks[i + 1]
+                if next_block.block_type == BlockType.EXAMPLE:
                     grouped_block = Block(
                         block_type=BlockType.DEFINITION,
                         text=f"{current.text}\n\n{next_block.text}",
@@ -418,6 +515,7 @@ class ChunkingService:
         """Add definition context to theorem/proof blocks.
 
         Prepends relevant definitions to provide context.
+        Clears definitions on section boundaries to prevent context bleeding.
 
         Args:
             blocks: List of blocks.
@@ -425,12 +523,16 @@ class ChunkingService:
         Returns:
             List of blocks with context headers added.
         """
-        # Track recent definitions (last 3)
+        # Track recent definitions (last 3) - cleared on section change
         recent_definitions: List[Block] = []
 
         result: List[Block] = []
 
         for block in blocks:
+            # Clear definitions on section boundary (prevent context bleeding)
+            if block.block_type == BlockType.SECTION_HEADER:
+                recent_definitions = []
+
             # Track definitions
             if block.block_type == BlockType.DEFINITION:
                 recent_definitions.append(block)
@@ -481,6 +583,8 @@ class ChunkingService:
     def _create_chunks(self, blocks: List[Block]) -> List[Dict[str, Any]]:
         """Create final chunk dictionaries with metadata.
 
+        Uses stack-based section tracking for correct hierarchy.
+
         Args:
             blocks: List of blocks to convert to chunks.
 
@@ -488,29 +592,28 @@ class ChunkingService:
             List of chunk dictionaries.
         """
         chunks: List[Dict[str, Any]] = []
-        current_section_path = ""
+        # Stack-based section tracking: {level: title}
+        section_stack: Dict[int, str] = {}
 
         for block in blocks:
             # Update section path when we hit section headers
             if block.block_type == BlockType.SECTION_HEADER:
-                section_match = self.SECTION_PATTERN.search(block.text)
-                if section_match:
-                    section_level = section_match.group(1)
-                    section_title = section_match.group(2)
+                section_info = self._detect_section_header(block.text)
+                if section_info:
+                    current_level = section_info["level"]
+                    section_title = section_info["title"]
 
-                    if section_level == "section":
-                        current_section_path = section_title
-                    elif section_level == "subsection":
-                        # Add to existing path
-                        if current_section_path:
-                            current_section_path += f" > {section_title}"
-                        else:
-                            current_section_path = section_title
-                    elif section_level == "subsubsection":
-                        if current_section_path:
-                            current_section_path += f" > {section_title}"
-                        else:
-                            current_section_path = section_title
+                    # Clear all levels >= current (handle sibling sections)
+                    keys_to_remove = [k for k in section_stack if k >= current_level]
+                    for k in keys_to_remove:
+                        del section_stack[k]
+
+                    # Add current section to stack
+                    section_stack[current_level] = section_title
+
+            # Build section path from stack
+            sorted_titles = [section_stack[k] for k in sorted(section_stack.keys())]
+            current_section_path = " > ".join(sorted_titles)
 
             chunk = {
                 "text": block.text,
@@ -527,26 +630,17 @@ class ChunkingService:
         return chunks
 
     def _count_tokens(self, text: str) -> int:
-        """Count approximate tokens in text.
+        """Count tokens in text using tiktoken.
 
-        Uses simple word-based counting as approximation.
-        Math notation and Russian text are handled.
+        Uses cl100k_base encoding for GPT-4 compatible token counting.
 
         Args:
             text: Text to count tokens for.
 
         Returns:
-            Approximate token count.
+            Token count.
         """
         if not text:
             return 0
 
-        # Simple word-based tokenization
-        # Split on whitespace and count
-        words = text.split()
-
-        # Adjust for LaTeX commands and math notation
-        # Rough heuristic: LaTeX commands ~1.5x multiplier
-        latex_commands = len(re.findall(r"\\[a-zA-Z]+", text))
-
-        return len(words) + int(latex_commands * 0.5)
+        return len(self._encoder.encode(text))
