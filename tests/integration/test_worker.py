@@ -169,13 +169,27 @@ class TestDocumentProcessingFlow:
         4. Verify progress updates
         5. Verify final status
         """
-        # 1. Create document
+        # 1. Create document with required relationships
+        from app.models.subject import Subject
+        from app.models.teacher import Teacher
+
         pdf_bytes = create_test_pdf(2)  # 2 pages
+
+        # Create subject and teacher required by document
+        subject = Subject(name="Test Subject", semester=1)
+        db_session.add(subject)
+        await db_session.flush()
+
+        teacher = Teacher(name="Test Teacher")
+        db_session.add(teacher)
+        await db_session.flush()
 
         document = Document(
             filename="test.pdf",
             s3_key="pdf/test.pdf",
             status=DocumentStatus.UPLOADED,
+            subject_id=subject.id,
+            teacher_id=teacher.id,
         )
         db_session.add(document)
         await db_session.commit()
@@ -245,11 +259,25 @@ class TestDocumentProcessingFlow:
         progress_tracker: ProgressTracker,
     ):
         """Test error handling during document processing."""
-        # Create document
+        # Create document with required relationships
+        from app.models.subject import Subject
+        from app.models.teacher import Teacher
+
+        # Create subject and teacher required by document
+        subject = Subject(name="Error Test Subject", semester=2)
+        db_session.add(subject)
+        await db_session.flush()
+
+        teacher = Teacher(name="Error Test Teacher")
+        db_session.add(teacher)
+        await db_session.flush()
+
         document = Document(
             filename="error.pdf",
             s3_key="pdf/error.pdf",
             status=DocumentStatus.UPLOADED,
+            subject_id=subject.id,
+            teacher_id=teacher.id,
         )
         db_session.add(document)
         await db_session.commit()
