@@ -24,6 +24,10 @@ class BlockType(str, Enum):
     COROLLARY = "corollary"
     EXAMPLE = "example"
     REMARK = "remark"
+    PROPOSITION = "proposition"
+    TASK = "task"
+    ASSERTION = "assertion"
+    NOTE = "note"
     SECTION_HEADER = "section_header"
     NARRATIVE = "narrative"
     THEOREM_PROOF = "theorem_proof"  # Grouped theorem + proof
@@ -71,13 +75,19 @@ class ChunkingService:
         "corollary",
         "example",
         "remark",
+        "proposition",
+        "assertion",
+        "task",
+        "note",
     }
     BEGIN_ENV_PATTERN = re.compile(
-        r"\\begin\{(theorem|proof|definition|lemma|corollary|example|remark)\}",
+        r"\\begin\{(theorem|proof|definition|lemma|corollary|example|remark|"
+        r"proposition|assertion|task|note)\}",
         re.IGNORECASE,
     )
     END_ENV_PATTERN = re.compile(
-        r"\\end\{(theorem|proof|definition|lemma|corollary|example|remark)\}",
+        r"\\end\{(theorem|proof|definition|lemma|corollary|example|remark|"
+        r"proposition|assertion|task|note)\}",
         re.IGNORECASE,
     )
 
@@ -92,24 +102,39 @@ class ChunkingService:
     # Russian keyword patterns (for documents without LaTeX environments)
     RUSSIAN_KEYWORDS = {
         BlockType.THEOREM: re.compile(
-            r"\\textbf\{Теорема|^Теорема\s+\d+", re.IGNORECASE
+            r"\\textbf\{Теорема\}|\b(?:Теорема|Теор\.|Т-ма)\b\.?\s*\d*", re.IGNORECASE
         ),
         BlockType.PROOF: re.compile(
-            r"\\textbf\{Доказательство\}|^Доказательство[\.:]\s*",
+            r"\\textbf\{Доказательство\}|"
+            r"\b(?:Доказательство|Док-во|Доказ\.|Д-во)\b\.?[:\s]*",
             re.IGNORECASE,
         ),
         BlockType.DEFINITION: re.compile(
-            r"\\textbf\{Определение\}|^Определение\s+\d+", re.IGNORECASE
+            r"\\textbf\{Определение\}|\b(?:Определение|Опр\.|Опр-ие)\b\.?\s*\d*",
+            re.IGNORECASE,
         ),
-        BlockType.LEMMA: re.compile(r"\\textbf\{Лемма\}|^Лемма\s+\d+", re.IGNORECASE),
+        BlockType.LEMMA: re.compile(
+            r"\\textbf\{Лемма\}|\b(?:Лемма|Лем\.)\b\.?\s*\d*", re.IGNORECASE
+        ),
         BlockType.COROLLARY: re.compile(
-            r"\\textbf\{Следствие\}|^Следствие\s+\d+", re.IGNORECASE
+            r"\\textbf\{Следствие\}|\b(?:Следствие|След\.|Сл-ие)\b\.?\s*\d*",
+            re.IGNORECASE,
         ),
         BlockType.EXAMPLE: re.compile(
-            r"\\textbf\{Пример\}|^Пример\s+\d+", re.IGNORECASE
+            r"\\textbf\{Пример\}|\bПример\b\.?\s*\d*", re.IGNORECASE
         ),
         BlockType.REMARK: re.compile(
-            r"\\textbf\{Замечание\}|^Замечание\s+\d+", re.IGNORECASE
+            r"\\textbf\{(?:Замечание|Примечание)\}|"
+            r"\b(?:Замечание|Зам\.|Примечание|Прим\.)\b\.?\s*\d*",
+            re.IGNORECASE,
+        ),
+        BlockType.PROPOSITION: re.compile(
+            r"\\textbf\{(?:Утверждение|Предложение)\}|"
+            r"\b(?:Утверждение|Утв\.|Предложение|Предл\.)\b\.?\s*\d*",
+            re.IGNORECASE,
+        ),
+        BlockType.TASK: re.compile(
+            r"\\textbf\{Задача\}|\b(?:Задача|Зад\.)\b\.?\s*\d*", re.IGNORECASE
         ),
     }
 
@@ -358,12 +383,13 @@ class ChunkingService:
         while i < len(blocks):
             current = blocks[i]
 
-            # Check if current is a theorem/lemma/corollary that might be
+            # Check if current is a theorem/lemma/corollary/proposition that might be
             # followed by a proof (possibly with small gap)
             if current.block_type in (
                 BlockType.THEOREM,
                 BlockType.LEMMA,
                 BlockType.COROLLARY,
+                BlockType.PROPOSITION,
             ):
                 # Look for proof within next 2 blocks (allowing 1 narrative gap)
                 proof_idx = None
@@ -546,6 +572,7 @@ class ChunkingService:
                 BlockType.THEOREM_PROOF,
                 BlockType.LEMMA,
                 BlockType.COROLLARY,
+                BlockType.PROPOSITION,
             ):
                 if recent_definitions:
                     # Create context header from recent definitions

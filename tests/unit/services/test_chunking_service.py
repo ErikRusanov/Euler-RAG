@@ -276,7 +276,7 @@ class TestBlockGrouping:
             ),
             Block(
                 block_type=BlockType.NARRATIVE,
-                text="Some discussion...",
+                text="Some discussion " * 50,  # Large narrative block >= 100 tokens
                 start_line_id=3,
                 end_line_id=4,
                 start_page=1,
@@ -294,7 +294,7 @@ class TestBlockGrouping:
 
         grouped = chunking_service._group_blocks(blocks)
 
-        # Should not group because narrative separates them
+        # Should not group because large narrative separates them
         assert len(grouped) == 3
 
 
