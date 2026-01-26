@@ -30,6 +30,7 @@ class BlockType(str, Enum):
     NOTE = "note"
     SECTION_HEADER = "section_header"
     NARRATIVE = "narrative"
+    LIST_ITEM = "list_item"
     THEOREM_PROOF = "theorem_proof"  # Grouped theorem + proof
 
 
@@ -58,9 +59,9 @@ class ChunkingService:
     """
 
     # Target chunk size in tokens
-    TARGET_TOKENS = 800
+    TARGET_TOKENS = 500
     MIN_TOKENS = 500
-    MAX_TOKENS = 2000
+    MAX_TOKENS = 1000
     CONTEXT_HEADER_MAX_TOKENS = 500
 
     # Section level hierarchy
@@ -98,6 +99,13 @@ class ChunkingService:
 
     # Markdown header patterns (Mathpix often outputs these)
     MARKDOWN_HEADER_PATTERN = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
+
+    # Book-style section patterns (Russian book formatting)
+    # Matches: "§ 1a. Название" or "1. Портфель ценных бумаг"
+    # Must start at beginning of line and be followed by capital letter
+    BOOK_SECTION_PATTERN = re.compile(
+        r"^(?:§\s*\d+[a-z]?\.|\d+\.)\s+([A-ZА-Я].+)$", re.MULTILINE
+    )
 
     # Russian keyword patterns (for documents without LaTeX environments)
     RUSSIAN_KEYWORDS = {
@@ -176,7 +184,7 @@ class ChunkingService:
     def _parse_blocks(self, lines: List[DocumentLine]) -> List[Block]:
         """Parse lines into semantic blocks.
 
-        Identifies LaTeX environments, section headers, and narrative text.
+        Identifies LaTeX environments, section headers, list items, and narrative text.
         Uses stack-based approach to handle nested environments correctly.
 
         Args:
@@ -189,15 +197,25 @@ class ChunkingService:
         env_stack: List[str] = []  # Stack for tracking nested environments
         current_block_lines: List[DocumentLine] = []
         current_block_type: Optional[BlockType] = None
+        previous_line: Optional[DocumentLine] = None
+        has_recent_level2: bool = False
 
         for line in lines:
             text = line.text.strip()
 
-            # Check for section headers (LaTeX or Markdown)
-            section_info = self._detect_section_header(text)
-            if section_info:
-                # Section headers only flush blocks if we're not inside a proof/theorem
-                if not env_stack:
+            # Check for section headers (LaTeX, Markdown, or book-style)
+            # Only check if not inside an environment
+            if not env_stack:
+                in_narrative_block = (
+                    current_block_type == BlockType.NARRATIVE
+                    and len(current_block_lines) > 0
+                )
+                section_info = self._detect_section_header(
+                    line, previous_line, in_narrative_block, has_recent_level2
+                )
+
+                if section_info:
+                    # Section headers flush blocks
                     if current_block_lines:
                         blocks.append(
                             self._create_block(
@@ -207,13 +225,56 @@ class ChunkingService:
                         )
                         current_block_lines = []
                         current_block_type = None
+                        has_recent_level2 = False
 
                     # Add section header block
                     blocks.append(self._create_block(BlockType.SECTION_HEADER, [line]))
+
+                    # Track if this is a Level 2 section for next block
+                    if section_info["level"] == 2:
+                        has_recent_level2 = True
+                    else:
+                        has_recent_level2 = False
+
+                    previous_line = line
                     continue
-                else:
-                    # Inside an environment, treat as content
+
+                # Check for list items (digit + dot pattern that failed section
+                # criteria). Only check if not in narrative block with content
+                if not in_narrative_block:
+                    list_item_pattern = re.compile(r"^\d+\.\s+")
+                    if list_item_pattern.match(text):
+                        # This is a list item
+                        if current_block_lines:
+                            blocks.append(
+                                self._create_block(
+                                    current_block_type or BlockType.NARRATIVE,
+                                    current_block_lines,
+                                )
+                            )
+                            current_block_lines = []
+                            current_block_type = None
+                            has_recent_level2 = False
+
+                        # Create list item block
+                        blocks.append(self._create_block(BlockType.LIST_ITEM, [line]))
+                        previous_line = line
+                        continue
+
+            # Handle numbered lines in narrative blocks
+            # If we're in a narrative block with content, numbered lines are
+            # part of narrative
+            if (
+                not env_stack
+                and current_block_type == BlockType.NARRATIVE
+                and len(current_block_lines) > 0
+            ):
+                # Check if it's a numbered line
+                numbered_pattern = re.compile(r"^\d+\.\s+")
+                if numbered_pattern.match(text):
+                    # Add to current narrative block, don't create new block
                     current_block_lines.append(line)
+                    previous_line = line
                     continue
 
             # Check for environment begin
@@ -237,11 +298,13 @@ class ChunkingService:
                     current_block_type = BlockType(env_name)
                     current_block_lines = [line]
                     env_stack.append(env_name)
+                    has_recent_level2 = False
                 else:
                     # Already inside an environment - this is nested
                     # Just add line to current block, don't start new block
                     current_block_lines.append(line)
                     env_stack.append(env_name)
+                previous_line = line
                 continue
 
             # Check for environment end
@@ -261,6 +324,8 @@ class ChunkingService:
                     )
                     current_block_lines = []
                     current_block_type = None
+                    has_recent_level2 = False
+                previous_line = line
                 continue
 
             # Check for Russian keywords (only if not inside an environment)
@@ -280,12 +345,16 @@ class ChunkingService:
                     # Start new block with detected type
                     current_block_type = detected_type
                     current_block_lines = [line]
+                    previous_line = line
                     continue
 
             # Regular line within current block or narrative
             current_block_lines.append(line)
             if not current_block_type and not env_stack:
                 current_block_type = BlockType.NARRATIVE
+
+            # Update previous_line for next iteration
+            previous_line = line
 
         # Flush remaining block
         if current_block_lines:
@@ -297,16 +366,35 @@ class ChunkingService:
 
         return blocks
 
-    def _detect_section_header(self, text: str) -> Optional[Dict[str, Any]]:
-        """Detect section header in LaTeX or Markdown format.
+    def _detect_section_header(
+        self,
+        line: DocumentLine,
+        previous_line: Optional[DocumentLine] = None,
+        in_narrative_block: bool = False,
+        has_recent_level2: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        """Detect section header in LaTeX, Markdown, or book-style format.
+
+        Uses strict validation rules to distinguish sections from list items.
 
         Args:
-            text: Line text to check.
+            line: DocumentLine to check.
+            previous_line: Previous DocumentLine for context checking.
+            in_narrative_block: True if line is inside a narrative block with content.
+            has_recent_level2: True if current block already has a Level 2 section.
 
         Returns:
-            Dict with 'level' and 'title' if detected, None otherwise.
+            Dict with 'level', 'title', and 'style' if detected, None otherwise.
         """
-        # Check LaTeX style
+        text = line.text.strip()
+        if not text:
+            return None
+
+        # Check if previous line ends with colon - definitely a list item
+        if self._previous_line_ends_with_colon(previous_line):
+            return None
+
+        # Check LaTeX style first (most reliable)
         latex_match = self.SECTION_PATTERN.search(text)
         if latex_match:
             level_name = latex_match.group(1).lower()
@@ -326,7 +414,60 @@ class ChunkingService:
                 "style": "markdown",
             }
 
-        return None
+        # Check book-style pattern (e.g., "§ 1a. Название" or "1. Портфель")
+        book_match = self.BOOK_SECTION_PATTERN.match(text)
+        if not book_match:
+            return None
+
+        # Extract title from match
+        title = book_match.group(1).strip()
+
+        # Strict header validation rules
+        word_count = self._count_words(text)
+        if word_count > 15:
+            # Headers are concise - reject if too long
+            return None
+
+        # Check if starts with § symbol
+        starts_with_section = text.strip().startswith("§")
+
+        if starts_with_section:
+            # § lines are Level 1 (Global) - always accept if passes word count
+            return {
+                "level": 1,
+                "title": title,
+                "style": "book",
+            }
+
+        # Numbered lines ("1.", "2.", etc.) - Level 2 (Sub-section) with
+        # strict conditions
+        # Only accept if:
+        # 1. line_type != "text" OR not in continuous paragraph
+        # 2. NOT in narrative block with existing content
+        # 3. NOT has_recent_level2 in same block
+        # 4. Previous line doesn't end with colon (already checked above)
+
+        # Check if line is part of continuous paragraph
+        is_continuous = self._is_continuous_paragraph(line, previous_line)
+
+        # Condition 1: line_type != "text" OR not in continuous paragraph
+        if line.line_type == "text" and is_continuous:
+            return None
+
+        # Condition 2: NOT in narrative block with existing content
+        if in_narrative_block:
+            return None
+
+        # Condition 3: NOT has_recent_level2 in same block
+        if has_recent_level2:
+            return None
+
+        # All conditions passed - this is a Level 2 section
+        return {
+            "level": 2,
+            "title": title,
+            "style": "book",
+        }
 
     def _detect_russian_keyword(self, text: str) -> Optional[BlockType]:
         """Detect Russian mathematical keywords in text.
@@ -342,8 +483,77 @@ class ChunkingService:
                 return block_type
         return None
 
+    def _count_words(self, text: str) -> int:
+        """Count words in text.
+
+        Args:
+            text: Text to count words in.
+
+        Returns:
+            Number of words (split on whitespace, filtered empty strings).
+        """
+        if not text:
+            return 0
+        words = [w for w in text.split() if w.strip()]
+        return len(words)
+
+    def _previous_line_ends_with_colon(
+        self, previous_line: Optional[DocumentLine]
+    ) -> bool:
+        """Check if previous line ends with colon.
+
+        Args:
+            previous_line: Previous DocumentLine or None.
+
+        Returns:
+            True if previous line text ends with colon, False otherwise.
+        """
+        if not previous_line or not previous_line.text:
+            return False
+        return previous_line.text.strip().endswith(":")
+
+    def _is_continuous_paragraph(
+        self, line: DocumentLine, previous_line: Optional[DocumentLine]
+    ) -> bool:
+        """Check if line appears to be part of continuous paragraph.
+
+        Args:
+            line: Current line to check.
+            previous_line: Previous DocumentLine or None.
+
+        Returns:
+            True if line is part of continuous paragraph, False otherwise.
+        """
+        # If line_type is not "text", it's not a continuous paragraph
+        if line.line_type != "text":
+            return False
+
+        # If no previous line, it's not continuous
+        if not previous_line:
+            return False
+
+        # Check if previous line ends with sentence-ending punctuation
+        prev_text = previous_line.text.strip()
+        if not prev_text:
+            return False
+
+        # Sentence-ending punctuation: period, exclamation, question mark
+        sentence_endings = ".!?"
+        # If previous line ends with sentence-ending punctuation, it's not continuous
+        if prev_text[-1] in sentence_endings:
+            return False
+
+        # If previous line ends with lowercase letter or comma, likely continuous
+        last_char = prev_text[-1]
+        if last_char.islower() or last_char == ",":
+            return True
+
+        return False
+
     def _create_block(self, block_type: BlockType, lines: List[DocumentLine]) -> Block:
         """Create Block from list of lines.
+
+        Filters out OCR artifacts (1-4 digit lines at start/end of block).
 
         Args:
             block_type: Type of block.
@@ -352,14 +562,28 @@ class ChunkingService:
         Returns:
             Block object.
         """
-        text = "\n".join(line.text for line in lines)
+        # Filter out OCR artifacts: lines with only 1-4 digits at start/end
+        filtered_lines: List[DocumentLine] = []
+        for i, line in enumerate(lines):
+            # Skip if first or last line and it's only 1-4 digits
+            if (i == 0 or i == len(lines) - 1) and re.match(
+                r"^\d{1,4}$", line.text.strip()
+            ):
+                continue
+            filtered_lines.append(line)
+
+        # If all lines were filtered, keep at least one (shouldn't happen, but safety)
+        if not filtered_lines:
+            filtered_lines = lines[:1]
+
+        text = "\n".join(line.text for line in filtered_lines)
         return Block(
             block_type=block_type,
             text=text,
-            start_line_id=lines[0].id,
-            end_line_id=lines[-1].id,
-            start_page=lines[0].page_number,
-            end_page=lines[-1].page_number,
+            start_line_id=filtered_lines[0].id,
+            end_line_id=filtered_lines[-1].id,
+            start_page=filtered_lines[0].page_number,
+            end_page=filtered_lines[-1].page_number,
         )
 
     def _group_blocks(self, blocks: List[Block]) -> List[Block]:
@@ -459,7 +683,8 @@ class ChunkingService:
     def _merge_small_blocks(self, blocks: List[Block]) -> List[Block]:
         """Merge small consecutive blocks to reach target size.
 
-        Respects section boundaries and size limits.
+        Respects section boundaries, size limits, and page boundaries.
+        Merges list items together into narrative chunks.
 
         Args:
             blocks: List of blocks to merge.
@@ -485,6 +710,43 @@ class ChunkingService:
                     current_tokens = 0
                 merged.append(block)
                 continue
+
+            # Handle list items - allow merging with other list items or small
+            # narrative blocks
+            if block.block_type == BlockType.LIST_ITEM:
+                if current_merge and (
+                    current_merge[-1].block_type == BlockType.LIST_ITEM
+                    or (
+                        current_merge[-1].block_type == BlockType.NARRATIVE
+                        and current_tokens < self.MIN_TOKENS
+                    )
+                ):
+                    # Merge with existing list items or small narrative
+                    current_merge.append(block)
+                    current_tokens += block_tokens
+                    continue
+                else:
+                    # Start new merge or flush current if too large
+                    if current_merge:
+                        merged.append(self._merge_block_list(current_merge))
+                        current_merge = []
+                        current_tokens = 0
+                    # Start new merge with this list item
+                    current_merge = [block]
+                    current_tokens = block_tokens
+                    continue
+
+            # Check if adding this block would cross a page boundary
+            # If we already have enough tokens, flush before crossing
+            if (
+                current_merge
+                and block.start_page > current_merge[-1].end_page
+                and current_tokens >= self.MIN_TOKENS
+            ):
+                # Flush current merge before crossing page boundary
+                merged.append(self._merge_block_list(current_merge))
+                current_merge = []
+                current_tokens = 0
 
             # Check if adding this block would exceed max size
             if current_tokens + block_tokens > self.MAX_TOKENS and current_merge:
@@ -512,6 +774,8 @@ class ChunkingService:
     def _merge_block_list(self, blocks: List[Block]) -> Block:
         """Merge list of blocks into single block.
 
+        Converts merged list items to NARRATIVE to prevent fragmentation.
+
         Args:
             blocks: Blocks to merge.
 
@@ -521,12 +785,26 @@ class ChunkingService:
         if len(blocks) == 1:
             return blocks[0]
 
-        # Use first non-narrative type if available
+        # If all blocks are list items, convert to NARRATIVE
+        if all(b.block_type == BlockType.LIST_ITEM for b in blocks):
+            return Block(
+                block_type=BlockType.NARRATIVE,
+                text="\n\n".join(b.text for b in blocks),
+                start_line_id=blocks[0].start_line_id,
+                end_line_id=blocks[-1].end_line_id,
+                start_page=blocks[0].start_page,
+                end_page=blocks[-1].end_page,
+            )
+
+        # Use first non-narrative, non-list-item type if available
         block_type = blocks[0].block_type
         for b in blocks:
-            if b.block_type != BlockType.NARRATIVE:
+            if b.block_type not in (BlockType.NARRATIVE, BlockType.LIST_ITEM):
                 block_type = b.block_type
                 break
+        # If we only have narrative/list items, use narrative
+        if block_type == BlockType.LIST_ITEM:
+            block_type = BlockType.NARRATIVE
 
         return Block(
             block_type=block_type,
@@ -625,7 +903,15 @@ class ChunkingService:
         for block in blocks:
             # Update section path when we hit section headers
             if block.block_type == BlockType.SECTION_HEADER:
-                section_info = self._detect_section_header(block.text)
+                # Create a minimal DocumentLine-like object for section detection
+                # For already-parsed section headers, we use lenient detection
+                class MinimalLine:
+                    def __init__(self, text: str):
+                        self.text = text
+                        self.line_type = "section_header"
+
+                minimal_line = MinimalLine(block.text)
+                section_info = self._detect_section_header(minimal_line)
                 if section_info:
                     current_level = section_info["level"]
                     section_title = section_info["title"]
