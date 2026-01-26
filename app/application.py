@@ -20,7 +20,7 @@ from app.middleware.auth import APIKeyMiddleware
 from app.middleware.cookie_auth import CookieAuthMiddleware
 from app.utils.db import close_db, init_db
 from app.utils.exception_handlers import register_exception_handlers
-from app.utils.nougat import close_nougat, init_nougat
+from app.utils.mathpix import close_mathpix, init_mathpix
 from app.utils.redis import close_redis, init_redis
 from app.utils.s3 import close_s3, init_s3
 from app.workers import worker_manager
@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     db_initialized = False
     s3_initialized = False
     redis_initialized = False
-    nougat_initialized = False
+    mathpix_initialized = False
     workers_started = False
 
     try:
@@ -64,9 +64,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await init_redis()
         redis_initialized = True
 
-        # Initialize Nougat OCR client (optional, may be None if not configured)
-        init_nougat()
-        nougat_initialized = True
+        # Initialize Mathpix OCR client (optional, may be None if not configured)
+        init_mathpix()
+        mathpix_initialized = True
 
         await worker_manager.start()
         workers_started = True
@@ -86,12 +86,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     exc_info=True,
                 )
 
-        if nougat_initialized:
+        if mathpix_initialized:
             try:
-                close_nougat()
+                close_mathpix()
             except Exception as cleanup_error:
                 logger.error(
-                    "Error closing Nougat during cleanup",
+                    "Error closing Mathpix during cleanup",
                     extra={"error": str(cleanup_error)},
                     exc_info=True,
                 )
@@ -132,7 +132,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("Shutting down application...")
     await worker_manager.stop()
-    close_nougat()
+    close_mathpix()
     await close_redis()
     close_s3()
     await close_db()

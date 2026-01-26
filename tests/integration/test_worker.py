@@ -4,16 +4,18 @@ Tests the full flow from enqueueing a task to processing completion
 with progress updates and status changes.
 """
 
-import asyncio
 import io
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pypdf import PdfWriter
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document, DocumentStatus
+from app.models.document_chunk import DocumentChunk
+from app.models.document_line import DocumentLine
 from app.workers.handlers.document import DocumentHandler
 from app.workers.progress import Progress, ProgressTracker
 from app.workers.queue import TaskQueue, TaskType
@@ -161,13 +163,14 @@ class TestDocumentProcessingFlow:
         redis_client: Redis,
         progress_tracker: ProgressTracker,
     ):
-        """Test complete document processing flow.
+        """Test complete document processing flow with Mathpix and chunking.
 
         1. Create document in DB
-        2. Enqueue processing task
-        3. Process document (with mocked S3 and reduced delay)
-        4. Verify progress updates
-        5. Verify final status
+        2. Process document (with mocked S3 and Mathpix)
+        3. Verify lines are saved
+        4. Verify chunks are created and saved
+        5. Verify progress updates
+        6. Verify final status
         """
         # 1. Create document with required relationships
         from app.models.subject import Subject
@@ -197,9 +200,59 @@ class TestDocumentProcessingFlow:
 
         document_id = document.id
 
-        # 2. Mock S3 and create handler
+        # 2. Mock S3 and Mathpix
         mock_s3 = MagicMock()
         mock_s3.download_file = MagicMock(return_value=pdf_bytes)
+        mock_s3.get_file_url = MagicMock(return_value="https://example.com/test.pdf")
+
+        # Mock Mathpix response with sample lines
+        mock_mathpix = MagicMock()
+        mock_mathpix.extract_lines = AsyncMock(
+            return_value={
+                "pages": [
+                    {
+                        "page": 1,
+                        "lines": [
+                            {
+                                "text": "\\section{Introduction}",
+                                "type": "header",
+                                "font_size": 14,
+                            },
+                            {
+                                "text": "This is a test document.",
+                                "type": "text",
+                                "font_size": 12,
+                            },
+                            {
+                                "text": "\\begin{theorem}",
+                                "type": "text",
+                                "font_size": 12,
+                            },
+                            {
+                                "text": "For all x, x^2 >= 0",
+                                "type": "math",
+                                "font_size": 12,
+                            },
+                            {
+                                "text": "\\end{theorem}",
+                                "type": "text",
+                                "font_size": 12,
+                            },
+                        ],
+                    },
+                    {
+                        "page": 2,
+                        "lines": [
+                            {
+                                "text": "More content on page 2",
+                                "type": "text",
+                                "font_size": 12,
+                            },
+                        ],
+                    },
+                ]
+            }
+        )
 
         from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -213,9 +266,10 @@ class TestDocumentProcessingFlow:
             session_factory=session_factory,
             s3=mock_s3,
             progress_tracker=progress_tracker,
+            mathpix_client=mock_mathpix,
         )
 
-        # 3. Create and process task (with reduced delay for testing)
+        # 3. Create and process task
         from app.workers.queue import Task
 
         task = Task(
@@ -225,32 +279,42 @@ class TestDocumentProcessingFlow:
             stream_id="0-0",
         )
 
-        # Patch the sleep to speed up test
-        with patch("app.workers.handlers.document.PAGE_PROCESSING_DELAY_SECONDS", 0.1):
-            with patch(
-                "app.workers.handlers.document.asyncio.sleep", new=asyncio.sleep
-            ):
-                await handler.process(task, db_session)
-                await db_session.commit()
+        await handler.process(task, db_session)
+        await db_session.commit()
 
-        # 4. Verify progress was updated
+        # 4. Verify document lines were saved
+        result = await db_session.execute(
+            select(DocumentLine).where(DocumentLine.document_id == document_id)
+        )
+        lines = list(result.scalars().all())
+        assert len(lines) == 6  # 5 lines on page 1, 1 line on page 2
+        assert all(line.document_id == document_id for line in lines)
+        assert lines[0].text == "\\section{Introduction}"
+        assert lines[0].line_type == "section_header"
+
+        # 5. Verify chunks were created and saved
+        result = await db_session.execute(
+            select(DocumentChunk).where(DocumentChunk.document_id == document_id)
+        )
+        chunks = list(result.scalars().all())
+        assert len(chunks) > 0
+        assert all(chunk.document_id == document_id for chunk in chunks)
+        # Verify chunk indices are sequential
+        chunk_indices = sorted([chunk.chunk_index for chunk in chunks])
+        assert chunk_indices == list(range(len(chunks)))
+
+        # 6. Verify progress was updated
         progress = await progress_tracker.get(document_id)
         assert progress is not None
         assert progress.status == "ready"
         assert progress.page == 2
         assert progress.total == 2
 
-        # 5. Verify final document status
+        # 7. Verify final document status
         await db_session.refresh(document)
         assert document.status == DocumentStatus.READY
         assert document.processed_at is not None
-        # Nougat is skipped when no client is provided
-        assert document.progress == {
-            "page": 2,
-            "total": 2,
-            "nougat_status": "skipped",
-            "nougat_text": None,
-        }
+        assert document.error is None
 
     @pytest.mark.asyncio
     async def test_document_processing_handles_errors(
@@ -329,3 +393,164 @@ class TestDocumentProcessingFlow:
         progress = await progress_tracker.get(document_id)
         assert progress is not None
         assert progress.status == "error"
+
+    @pytest.mark.asyncio
+    async def test_document_processing_handles_mathpix_error(
+        self,
+        db_session: AsyncSession,
+        progress_tracker: ProgressTracker,
+    ):
+        """Test error handling when Mathpix fails."""
+        from app.models.subject import Subject
+        from app.models.teacher import Teacher
+
+        subject = Subject(name="Mathpix Error Subject", semester=1)
+        db_session.add(subject)
+        await db_session.flush()
+
+        teacher = Teacher(name="Mathpix Error Teacher")
+        db_session.add(teacher)
+        await db_session.flush()
+
+        pdf_bytes = create_test_pdf(1)
+
+        document = Document(
+            filename="mathpix_error.pdf",
+            s3_key="pdf/mathpix_error.pdf",
+            status=DocumentStatus.UPLOADED,
+            subject_id=subject.id,
+            teacher_id=teacher.id,
+        )
+        db_session.add(document)
+        await db_session.commit()
+        await db_session.refresh(document)
+
+        document_id = document.id
+
+        # Mock S3
+        mock_s3 = MagicMock()
+        mock_s3.download_file = MagicMock(return_value=pdf_bytes)
+        mock_s3.get_file_url = MagicMock(return_value="https://example.com/test.pdf")
+
+        # Mock Mathpix to raise error
+        from app.exceptions import MathpixError
+
+        mock_mathpix = MagicMock()
+        mock_mathpix.extract_lines = AsyncMock(
+            side_effect=MathpixError("Mathpix API error", retryable=True)
+        )
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        session_factory = async_sessionmaker(
+            bind=db_session.get_bind(),
+            expire_on_commit=False,
+            autoflush=False,
+        )
+
+        handler = DocumentHandler(
+            session_factory=session_factory,
+            s3=mock_s3,
+            progress_tracker=progress_tracker,
+            mathpix_client=mock_mathpix,
+        )
+
+        from app.workers.handlers.base import TaskError
+        from app.workers.queue import Task
+
+        task = Task(
+            id="test-task-mathpix-error",
+            type=TaskType.DOCUMENT_PROCESS,
+            payload={"document_id": document_id},
+            stream_id="0-0",
+        )
+
+        # Process should raise TaskError
+        with pytest.raises(TaskError) as exc_info:
+            await handler.process(task, db_session)
+
+        assert exc_info.value.retryable is True
+        assert "Mathpix" in str(exc_info.value)
+
+        await db_session.commit()
+
+        # Verify error status
+        await db_session.refresh(document)
+        assert document.status == DocumentStatus.ERROR
+        assert document.error is not None
+
+    @pytest.mark.asyncio
+    async def test_document_processing_requires_mathpix_client(
+        self,
+        db_session: AsyncSession,
+        progress_tracker: ProgressTracker,
+    ):
+        """Test that processing fails if Mathpix client is not configured."""
+        from app.models.subject import Subject
+        from app.models.teacher import Teacher
+
+        subject = Subject(name="No Client Subject", semester=1)
+        db_session.add(subject)
+        await db_session.flush()
+
+        teacher = Teacher(name="No Client Teacher")
+        db_session.add(teacher)
+        await db_session.flush()
+
+        pdf_bytes = create_test_pdf(1)
+
+        document = Document(
+            filename="no_client.pdf",
+            s3_key="pdf/no_client.pdf",
+            status=DocumentStatus.UPLOADED,
+            subject_id=subject.id,
+            teacher_id=teacher.id,
+        )
+        db_session.add(document)
+        await db_session.commit()
+        await db_session.refresh(document)
+
+        document_id = document.id
+
+        # Mock S3
+        mock_s3 = MagicMock()
+        mock_s3.download_file = MagicMock(return_value=pdf_bytes)
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        session_factory = async_sessionmaker(
+            bind=db_session.get_bind(),
+            expire_on_commit=False,
+            autoflush=False,
+        )
+
+        # Handler without Mathpix client
+        handler = DocumentHandler(
+            session_factory=session_factory,
+            s3=mock_s3,
+            progress_tracker=progress_tracker,
+            mathpix_client=None,
+        )
+
+        from app.workers.handlers.base import TaskError
+        from app.workers.queue import Task
+
+        task = Task(
+            id="test-task-no-client",
+            type=TaskType.DOCUMENT_PROCESS,
+            payload={"document_id": document_id},
+            stream_id="0-0",
+        )
+
+        # Process should raise TaskError
+        with pytest.raises(TaskError) as exc_info:
+            await handler.process(task, db_session)
+
+        assert exc_info.value.retryable is False
+        assert "Mathpix client not configured" in str(exc_info.value)
+
+        await db_session.commit()
+
+        # Verify error status
+        await db_session.refresh(document)
+        assert document.status == DocumentStatus.ERROR
