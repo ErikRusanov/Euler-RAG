@@ -177,7 +177,20 @@ class DocumentHandler(BaseTaskHandler):
 
         except asyncio.CancelledError:
             raise
-        except TaskError:
+        except TaskError as e:
+            # Set document status to ERROR before re-raising
+            document.status = DocumentStatus.ERROR
+            document.error = str(e)
+
+            await self._progress.update(
+                Progress(
+                    document_id=document_id,
+                    page=0,
+                    total=0,
+                    status="error",
+                    message=str(e),
+                )
+            )
             raise
         except Exception as e:
             document.status = DocumentStatus.ERROR

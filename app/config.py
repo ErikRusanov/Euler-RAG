@@ -108,12 +108,6 @@ class Settings(BaseSettings):
         description="Number of concurrent worker tasks",
     )
 
-    # Replicate (Nougat OCR) Settings
-    replicate_api_token: str = Field(
-        default="",
-        description="Replicate API token for Nougat OCR processing",
-    )
-
     # Mathpix OCR Settings
     mathpix_app_id: str = Field(
         default="",

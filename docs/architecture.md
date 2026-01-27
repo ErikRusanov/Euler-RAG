@@ -32,17 +32,17 @@ flowchart TB
     subgraph Backend
         API[FastAPI Gateway]
         ADMIN[Admin Panel]
-        
+
         subgraph Services
             DOC[Document Service]
             SOLVER[Solver Service]
             SUBJ[Subject Service]
         end
-        
+
         subgraph Workers
             PROC[Document Processor]
         end
-        
+
         LLM[LLM API]
     end
 
@@ -56,19 +56,19 @@ flowchart TB
     TG -->|API Key| API
     WEB -->|API Key| API
     ADMIN -->|Cookie Auth| API
-    
+
     API --> DOC
     API --> SOLVER
     API --> SUBJ
-    
+
     DOC -->|queue task| RD
     RD --> PROC
     PROC -->|parse & embed| QD
     PROC -->|save file| S3
-    
+
     SOLVER -->|search| QD
     SOLVER -->|call| LLM
-    
+
     DOC --> PG
     SUBJ --> PG
     SOLVER --> PG
@@ -81,7 +81,7 @@ flowchart TB
 
 ### 1.3 Service Responsibilities
 
-- **Document Service**: Accepts PDF files, enqueues processing tasks in Redis, and returns a `task_id`. Worker picks up the task, parses via Nougat, chunks and embeds content, stores vectors in Qdrant, and file in S3.
+- **Document Service**: Accepts PDF files, enqueues processing tasks in Redis, and returns a `task_id`. Worker picks up the task, parses via Mathpix, chunks and embeds content, stores vectors in Qdrant, and file in S3.
 - **Solver Service**: Receives problem-solving requests, retrieves relevant chunks from Qdrant, crafts prompts with context, sends them to the LLM, and verifies the answer.
 - **Subject Service**: Provides CRUD operations for subjects and instructors; used for filtering during search.
 
@@ -97,7 +97,7 @@ flowchart TD
     B --> C[Create DB record: status=pending]
     C --> D[Enqueue task in Redis]
     D --> E[Worker picks up]
-    E --> F[Nougat: parse page]
+    E --> F[Mathpix: parse page]
     F --> G{Success?}
     G -->|Yes| H[Update progress in DB]
     H --> I{More pages?}
@@ -113,7 +113,7 @@ flowchart TD
 Process Summary:
 1. User uploads a PDF and metadata.
 2. File is stored on S3 and a pending DB record is created.
-3. The task is placed in Redis. The worker processes each page through Nougat.
+3. The task is placed in Redis. The worker processes each page through Mathpix.
 4. Progress is tracked; after parsing, the subject/teacher is identified via LLM.
 5. Chunks are created, embedded, and saved to Qdrant. Status is set to "ready" or "failed."
 
@@ -207,7 +207,7 @@ erDiagram
 | Database      | PostgreSQL          | JSONB for progress/chunks_used, reliability, familiar ecosystem         |
 | Vector DB     | Qdrant              | Fast, metadata filtering, simpler than Pinecone, active development     |
 | File Storage  | S3 (boto3)          | Standard API, compatible with any S3 provider                           |
-| PDF Parser    | Nougat              | Best open-source for LaTeX, no OCR required                             |
+| PDF Parser    | Mathpix             | Best OCR for LaTeX, supports Russian and handwriting                    |
 | LLM           | OpenRouter          | Unified API for multiple models, flexible/fallback                      |
 | Embeddings    | text-embedding-3-small | Balance of price/quality, 1536 dims                                 |
 | Admin Panel   | Jinja2 Templates    | Full UI control, custom dashboards                                      |
