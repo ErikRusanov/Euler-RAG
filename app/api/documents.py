@@ -44,8 +44,6 @@ async def create_document(
 @router.get("")
 async def list_documents(
     status: DocumentStatus | None = None,
-    subject_id: int | None = None,
-    teacher_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
     service: DocumentService = Depends(dependencies.document),
@@ -54,8 +52,6 @@ async def list_documents(
 
     Args:
         status: Filter by document processing status.
-        subject_id: Filter by subject ID.
-        teacher_id: Filter by teacher ID.
         limit: Maximum number of documents to return.
         offset: Number of documents to skip.
         service: DocumentService instance.
@@ -66,10 +62,6 @@ async def list_documents(
     filters = {}
     if status is not None:
         filters["status"] = status
-    if subject_id is not None:
-        filters["subject_id"] = subject_id
-    if teacher_id is not None:
-        filters["teacher_id"] = teacher_id
 
     documents = await service.find(limit=limit, offset=offset, **filters)
     return [DocumentResponse.model_validate(doc) for doc in documents]
@@ -81,7 +73,7 @@ async def get_document(
     service: DocumentService = Depends(dependencies.document),
     s3: S3Storage = Depends(get_s3_storage),
 ) -> DocumentResponse:
-    """Get document by ID with relationships.
+    """Get document by ID.
 
     Args:
         document_id: Document ID to retrieve.
@@ -89,28 +81,17 @@ async def get_document(
         s3: S3 storage instance.
 
     Returns:
-        Document details with direct file URL and related entity names.
+        Document details with direct file URL.
 
     Raises:
         RecordNotFoundError: If document with given ID does not exist.
     """
-    from app.exceptions import RecordNotFoundError
 
-    document = await service.get_with_relationships(document_id)
-    if not document:
-        raise RecordNotFoundError("Document", document_id)
-
+    document = await service.get_by_id_or_fail(document_id)
     url = s3.get_file_url(document.s3_key)
 
     response = DocumentResponse.model_validate(document)
     response.url = url
-
-    # Add related entity names if loaded
-    if document.subject:
-        response.subject_name = document.subject.name
-        response.subject_semester = document.subject.semester
-    if document.teacher:
-        response.teacher_name = document.teacher.name
 
     return response
 
@@ -140,7 +121,7 @@ async def update_document(
         )
     )
 
-    updated_document = await service.update_document(document_id, **update_data)
+    updated_document = await service.update(document_id, **update_data)
 
     if should_enqueue:
         try:
@@ -153,7 +134,7 @@ async def update_document(
                 exc_info=True,
             )
             # Rollback status to UPLOADED to prevent document being stuck in PENDING
-            await service.update_document(document_id, status=DocumentStatus.UPLOADED)
+            await service.update(document_id, status=DocumentStatus.UPLOADED)
             raise TaskEnqueueError(
                 task_type=TaskType.DOCUMENT_PROCESS.value,
                 resource_id=document_id,

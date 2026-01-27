@@ -10,8 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import Document, DocumentStatus
 from app.models.document_chunk import DocumentChunk
 from app.models.document_line import DocumentLine
-from app.models.subject import Subject
-from app.models.teacher import Teacher
 
 
 class TestDocumentChunkConstraints:
@@ -22,15 +20,7 @@ class TestDocumentChunkConstraints:
         self, db_session: AsyncSession
     ):
         """Duplicate (document_id, chunk_index) raises error."""
-        subject = Subject(name="Math", semester=1)
-        teacher = Teacher(name="Dr. Smith")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test.pdf",
             status=DocumentStatus.PROCESSING,
@@ -67,15 +57,7 @@ class TestDocumentChunkConstraints:
     @pytest.mark.asyncio
     async def test_different_chunk_indices_allowed(self, db_session: AsyncSession):
         """Different chunk indices for same document are allowed."""
-        subject = Subject(name="Physics", semester=1)
-        teacher = Teacher(name="Dr. Johnson")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test2.pdf",
             status=DocumentStatus.PROCESSING,
@@ -110,15 +92,7 @@ class TestDocumentChunkConstraints:
     @pytest.mark.asyncio
     async def test_cascade_delete_on_document(self, db_session: AsyncSession):
         """Deleting document cascades to delete all its chunks."""
-        subject = Subject(name="Chemistry", semester=2)
-        teacher = Teacher(name="Dr. Brown")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test3.pdf",
             status=DocumentStatus.PROCESSING,
@@ -168,15 +142,7 @@ class TestDocumentChunkLineReferences:
     @pytest.mark.asyncio
     async def test_references_document_lines(self, db_session: AsyncSession):
         """DocumentChunk can reference start and end document lines."""
-        subject = Subject(name="Math", semester=1)
-        teacher = Teacher(name="Dr. Smith")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test4.pdf",
             status=DocumentStatus.PROCESSING,
@@ -231,15 +197,7 @@ class TestDocumentChunkLineReferences:
     @pytest.mark.asyncio
     async def test_nullable_line_references(self, db_session: AsyncSession):
         """DocumentChunk allows null line references."""
-        subject = Subject(name="Physics", semester=2)
-        teacher = Teacher(name="Dr. Johnson")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test5.pdf",
             status=DocumentStatus.PROCESSING,
@@ -278,15 +236,7 @@ class TestDocumentChunkFields:
     @pytest.mark.asyncio
     async def test_stores_chunk_type(self, db_session: AsyncSession):
         """DocumentChunk stores chunk_type classification correctly."""
-        subject = Subject(name="Math", semester=3)
-        teacher = Teacher(name="Dr. Lee")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test6.pdf",
             status=DocumentStatus.PROCESSING,
@@ -320,15 +270,7 @@ class TestDocumentChunkFields:
     @pytest.mark.asyncio
     async def test_stores_qdrant_point_id(self, db_session: AsyncSession):
         """DocumentChunk stores Qdrant point UUID correctly."""
-        subject = Subject(name="Physics", semester=1)
-        teacher = Teacher(name="Dr. Smith")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test7.pdf",
             status=DocumentStatus.PROCESSING,
@@ -363,15 +305,7 @@ class TestDocumentChunkFields:
     @pytest.mark.asyncio
     async def test_unique_qdrant_point_id(self, db_session: AsyncSession):
         """Duplicate qdrant_point_id raises error."""
-        subject = Subject(name="Math", semester=1)
-        teacher = Teacher(name="Dr. Brown")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test8.pdf",
             status=DocumentStatus.PROCESSING,
@@ -412,15 +346,7 @@ class TestDocumentChunkFields:
     @pytest.mark.asyncio
     async def test_stores_page_range(self, db_session: AsyncSession):
         """DocumentChunk stores page range correctly."""
-        subject = Subject(name="Chemistry", semester=2)
-        teacher = Teacher(name="Dr. Wilson")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test9.pdf",
             status=DocumentStatus.PROCESSING,

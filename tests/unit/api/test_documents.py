@@ -19,8 +19,6 @@ def mock_document():
     doc.filename = "test.pdf"
     doc.s3_key = "pdf/test.pdf"
     doc.status = DocumentStatus.UPLOADED
-    doc.subject_id = None
-    doc.teacher_id = None
     doc.progress = {"page": 0, "total": 0}
     doc.error = None
     doc.processed_at = None
@@ -37,8 +35,6 @@ def mock_updated_document(mock_document):
     doc.filename = mock_document.filename
     doc.s3_key = mock_document.s3_key
     doc.status = DocumentStatus.PENDING
-    doc.subject_id = None
-    doc.teacher_id = None
     doc.progress = {"page": 0, "total": 0}
     doc.error = None
     doc.processed_at = None
@@ -72,7 +68,7 @@ class TestUpdateDocumentEnqueueFailure:
                         mock_service.get_by_id_or_fail = AsyncMock(
                             return_value=mock_document
                         )
-                        mock_service.update_document = AsyncMock(
+                        mock_service.update = AsyncMock(
                             return_value=mock_updated_document
                         )
 
@@ -135,7 +131,7 @@ class TestUpdateDocumentEnqueueFailure:
                         mock_service.get_by_id_or_fail = AsyncMock(
                             return_value=mock_document
                         )
-                        mock_service.update_document = AsyncMock(
+                        mock_service.update = AsyncMock(
                             return_value=mock_updated_document
                         )
 
@@ -166,10 +162,10 @@ class TestUpdateDocumentEnqueueFailure:
                                     headers={"X-API-KEY": settings.api_key},
                                 )
 
-                                # Verify update_document was called twice:
+                                # Verify update was called twice:
                                 # 1. To set status to PENDING
                                 # 2. To rollback status to UPLOADED
-                                calls = mock_service.update_document.call_args_list
+                                calls = mock_service.update.call_args_list
                                 assert len(calls) >= 2
 
                                 # Second call should rollback to UPLOADED

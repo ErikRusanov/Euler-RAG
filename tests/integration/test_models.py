@@ -10,39 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document, DocumentStatus
 from app.models.solve_request import SolveRequest, SolveRequestStatus
-from app.models.subject import Subject
-from app.models.teacher import Teacher
-
-
-class TestSubjectConstraints:
-    """Tests for Subject model unique constraints."""
-
-    @pytest.mark.asyncio
-    async def test_unique_name_semester_constraint(self, db_session: AsyncSession):
-        """Duplicate (name, semester) pair raises error."""
-        subject = Subject(name="Math", semester=1)
-        db_session.add(subject)
-        await db_session.flush()
-        await db_session.commit()
-
-        with pytest.raises(IntegrityError):
-            duplicate = Subject(name="Math", semester=1)
-            db_session.add(duplicate)
-            await db_session.flush()
-            await db_session.commit()
-
-    @pytest.mark.asyncio
-    async def test_same_name_different_semester_allowed(self, db_session: AsyncSession):
-        """Same name in different semesters is allowed."""
-        subject1 = Subject(name="Physics", semester=1)
-        subject2 = Subject(name="Physics", semester=2)
-        db_session.add(subject1)
-        db_session.add(subject2)
-        await db_session.flush()
-        await db_session.commit()
-
-        assert subject1.id != subject2.id
-        assert subject1.semester != subject2.semester
 
 
 class TestDocumentConstraints:
@@ -51,16 +18,7 @@ class TestDocumentConstraints:
     @pytest.mark.asyncio
     async def test_s3_key_must_be_unique(self, db_session: AsyncSession):
         """Duplicate s3_key raises error."""
-        subject = Subject(name="Math", semester=1)
-        teacher = Teacher(name="Dr. Smith")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-        await db_session.commit()
-
         doc1 = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="doc.pdf",
             s3_key="documents/unique.pdf",
             status=DocumentStatus.UPLOADED,
@@ -71,8 +29,6 @@ class TestDocumentConstraints:
 
         with pytest.raises(IntegrityError):
             doc2 = Document(
-                subject_id=subject.id,
-                teacher_id=teacher.id,
                 filename="other.pdf",
                 s3_key="documents/unique.pdf",
                 status=DocumentStatus.UPLOADED,
@@ -84,17 +40,8 @@ class TestDocumentConstraints:
     @pytest.mark.asyncio
     async def test_stores_jsonb_progress(self, db_session: AsyncSession):
         """Document stores JSONB progress field correctly."""
-        subject = Subject(name="Physics", semester=1)
-        teacher = Teacher(name="Dr. Johnson")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-        await db_session.commit()
-
         progress = {"pages": 10, "chunks": 25}
         doc = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="doc.pdf",
             s3_key="documents/doc.pdf",
             status=DocumentStatus.PROCESSING,
@@ -153,20 +100,3 @@ class TestSolveRequestModel:
         assert request.used_rag is False
         assert request.verified is False
         assert request.answer is None
-
-
-class TestTeacherModel:
-    """Tests for Teacher model behavior."""
-
-    @pytest.mark.asyncio
-    async def test_duplicate_names_allowed(self, db_session: AsyncSession):
-        """Multiple teachers can have the same name."""
-        teacher1 = Teacher(name="Dr. Smith")
-        teacher2 = Teacher(name="Dr. Smith")
-        db_session.add(teacher1)
-        db_session.add(teacher2)
-        await db_session.flush()
-        await db_session.commit()
-
-        assert teacher1.id != teacher2.id
-        assert teacher1.name == teacher2.name

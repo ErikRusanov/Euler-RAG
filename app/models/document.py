@@ -2,15 +2,11 @@
 
 import enum
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Any, Dict, Optional
 
-if TYPE_CHECKING:
-    from app.models.subject import Subject
-    from app.models.teacher import Teacher
-
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Enum, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel
 
@@ -37,11 +33,9 @@ class Document(BaseModel):
     """Document model for storing uploaded files and their processing status.
 
     Represents a document (PDF, etc.) uploaded for processing. Tracks the
-    processing status, progress, and relationships with subjects and teachers.
+    processing status and progress.
 
     Attributes:
-        subject_id: Foreign key to subjects table
-        teacher_id: Foreign key to teachers table
         filename: Original filename of the uploaded document
         s3_key: Unique S3 storage key for the document
         status: Current processing status (enum)
@@ -54,8 +48,6 @@ class Document(BaseModel):
     Example:
         document = await Document.create(
             db,
-            subject_id=1,
-            teacher_id=2,
             filename="lecture_notes.pdf",
             s3_key="documents/2024/lecture_notes_abc123.pdf",
             status=DocumentStatus.UPLOADED
@@ -63,14 +55,6 @@ class Document(BaseModel):
     """
 
     __tablename__ = "documents"
-
-    # Foreign keys (nullable - can be assigned later)
-    subject_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("subjects.id"), nullable=True, index=True
-    )
-    teacher_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("teachers.id"), nullable=True, index=True
-    )
 
     # Document metadata
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -95,14 +79,6 @@ class Document(BaseModel):
     # Processing timestamp
     processed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
-    )
-
-    # Relationships (lazy='selectinload' for optimized queries)
-    subject: Mapped[Optional["Subject"]] = relationship(
-        "Subject", lazy="noload", foreign_keys=[subject_id]
-    )
-    teacher: Mapped[Optional["Teacher"]] = relationship(
-        "Teacher", lazy="noload", foreign_keys=[teacher_id]
     )
 
     def __repr__(self) -> str:

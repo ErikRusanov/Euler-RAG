@@ -7,8 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document, DocumentStatus
 from app.models.document_line import DocumentLine
-from app.models.subject import Subject
-from app.models.teacher import Teacher
 
 
 class TestDocumentLineConstraints:
@@ -17,15 +15,7 @@ class TestDocumentLineConstraints:
     @pytest.mark.asyncio
     async def test_unique_document_page_line_constraint(self, db_session: AsyncSession):
         """Duplicate (document_id, page_number, line_number) raises error."""
-        subject = Subject(name="Math", semester=1)
-        teacher = Teacher(name="Dr. Smith")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test.pdf",
             status=DocumentStatus.PROCESSING,
@@ -62,15 +52,7 @@ class TestDocumentLineConstraints:
     @pytest.mark.asyncio
     async def test_same_line_different_page_allowed(self, db_session: AsyncSession):
         """Same line number on different pages is allowed."""
-        subject = Subject(name="Physics", semester=1)
-        teacher = Teacher(name="Dr. Johnson")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test2.pdf",
             status=DocumentStatus.PROCESSING,
@@ -105,15 +87,7 @@ class TestDocumentLineConstraints:
     @pytest.mark.asyncio
     async def test_cascade_delete_on_document(self, db_session: AsyncSession):
         """Deleting document cascades to delete all its lines."""
-        subject = Subject(name="Chemistry", semester=2)
-        teacher = Teacher(name="Dr. Brown")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test3.pdf",
             status=DocumentStatus.PROCESSING,
@@ -163,15 +137,7 @@ class TestDocumentLineJSONBFields:
     @pytest.mark.asyncio
     async def test_stores_region_jsonb(self, db_session: AsyncSession):
         """DocumentLine stores JSONB region field correctly."""
-        subject = Subject(name="Math", semester=1)
-        teacher = Teacher(name="Dr. Smith")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test4.pdf",
             status=DocumentStatus.PROCESSING,
@@ -210,15 +176,7 @@ class TestDocumentLineJSONBFields:
     @pytest.mark.asyncio
     async def test_stores_raw_metadata_jsonb(self, db_session: AsyncSession):
         """DocumentLine stores JSONB raw_metadata field correctly."""
-        subject = Subject(name="Physics", semester=2)
-        teacher = Teacher(name="Dr. Johnson")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test5.pdf",
             status=DocumentStatus.PROCESSING,
@@ -260,15 +218,7 @@ class TestDocumentLineMetadata:
     @pytest.mark.asyncio
     async def test_default_boolean_values(self, db_session: AsyncSession):
         """DocumentLine has correct default values for boolean fields."""
-        subject = Subject(name="Math", semester=1)
-        teacher = Teacher(name="Dr. Smith")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test6.pdf",
             status=DocumentStatus.PROCESSING,
@@ -295,15 +245,7 @@ class TestDocumentLineMetadata:
     @pytest.mark.asyncio
     async def test_stores_all_mathpix_fields(self, db_session: AsyncSession):
         """DocumentLine stores all Mathpix metadata fields correctly."""
-        subject = Subject(name="Math", semester=3)
-        teacher = Teacher(name="Dr. Lee")
-        db_session.add(subject)
-        db_session.add(teacher)
-        await db_session.flush()
-
         document = Document(
-            subject_id=subject.id,
-            teacher_id=teacher.id,
             filename="test.pdf",
             s3_key="documents/test7.pdf",
             status=DocumentStatus.PROCESSING,

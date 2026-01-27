@@ -16,11 +16,6 @@ class DocumentResponse(BaseModel):
     s3_key: str
     status: DocumentStatus
     progress: dict[str, Any]
-    subject_id: Optional[int] = None
-    teacher_id: Optional[int] = None
-    subject_name: Optional[str] = None
-    subject_semester: Optional[int] = None
-    teacher_name: Optional[str] = None
     error: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -33,8 +28,6 @@ class DocumentResponse(BaseModel):
 class DocumentUpdate(BaseModel):
     """Schema for updating document fields."""
 
-    subject_id: Optional[int] = None
-    teacher_id: Optional[int] = None
     filename: Optional[str] = None
     status: Optional[DocumentStatus] = None
     progress: Optional[dict[str, Any]] = None

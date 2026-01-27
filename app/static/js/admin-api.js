@@ -80,56 +80,6 @@ async function startProcessing(documentId) {
     return await updateDocument(documentId, { status: 'pending' });
 }
 
-/**
- * Create a new subject.
- * @param {string} name - Subject name.
- * @param {number} semester - Semester number.
- * @returns {Promise<Object>} Created subject data.
- */
-async function createSubject(name, semester) {
-    const response = await apiRequest('/api/subjects', {
-        method: 'POST',
-        body: JSON.stringify({ name, semester }),
-    });
-    return await response.json();
-}
-
-/**
- * Create a new teacher.
- * @param {string} name - Teacher name.
- * @returns {Promise<Object>} Created teacher data.
- */
-async function createTeacher(name) {
-    const response = await apiRequest('/api/teachers', {
-        method: 'POST',
-        body: JSON.stringify({ name }),
-    });
-    return await response.json();
-}
-
-/**
- * Search subjects by name.
- * @param {string} search - Search term.
- * @param {number} limit - Max results.
- * @returns {Promise<Array>} Matching subjects.
- */
-async function searchSubjects(search = '', limit = 10) {
-    const params = new URLSearchParams({ search, limit: limit.toString() });
-    const response = await apiRequest(`/api/subjects?${params}`);
-    return await response.json();
-}
-
-/**
- * Search teachers by name.
- * @param {string} search - Search term.
- * @param {number} limit - Max results.
- * @returns {Promise<Array>} Matching teachers.
- */
-async function searchTeachers(search = '', limit = 10) {
-    const params = new URLSearchParams({ search, limit: limit.toString() });
-    const response = await apiRequest(`/api/teachers?${params}`);
-    return await response.json();
-}
 
 /**
  * Reload the documents table by making a GET request to the current page.
@@ -191,20 +141,12 @@ function reloadDocumentsTable(queryParams = null) {
  */
 function handleFilterChange() {
     const statusSelect = document.getElementById('status');
-    const subjectSelect = document.getElementById('subject_id');
-    const teacherSelect = document.getElementById('teacher_id');
     const pageSizeSelect = document.getElementById('page_size');
 
     const queryParams = {};
 
     if (statusSelect && statusSelect.value) {
         queryParams.status = statusSelect.value;
-    }
-    if (subjectSelect && subjectSelect.value) {
-        queryParams.subject_id = subjectSelect.value;
-    }
-    if (teacherSelect && teacherSelect.value) {
-        queryParams.teacher_id = teacherSelect.value;
     }
     if (pageSizeSelect && pageSizeSelect.value) {
         queryParams.page_size = pageSizeSelect.value;
@@ -223,7 +165,7 @@ function initializeFilterHandlers() {
     const handler = function(event) {
         const target = event.target;
         // Only handle changes on filter selects
-        if (target && target.matches && target.matches('#status, #subject_id, #teacher_id, #page_size')) {
+        if (target && target.matches && target.matches('#status, #page_size')) {
             handleFilterChange();
         }
     };
@@ -351,18 +293,6 @@ function showDocumentModal(docData) {
                                 <span class="status-badge ${docData.status.value || docData.status}">${docData.status.value || docData.status}</span>
                             </div>
                         </div>
-                        ${docData.subject_id ? `
-                        <div class="detail-section">
-                            <div class="detail-label">Subject ID</div>
-                            <div class="detail-value">${docData.subject_id}</div>
-                        </div>
-                        ` : ''}
-                        ${docData.teacher_id ? `
-                        <div class="detail-section">
-                            <div class="detail-label">Teacher ID</div>
-                            <div class="detail-value">${docData.teacher_id}</div>
-                        </div>
-                        ` : ''}
                         <div class="detail-section">
                             <div class="detail-label">S3 Key</div>
                             <div class="detail-value" style="font-family: monospace; font-size: 0.75rem;">${escapeHtml(docData.s3_key)}</div>
@@ -422,10 +352,6 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Store selected values for edit modal
-let editModalSelectedSubject = null;
-let editModalSelectedTeacher = null;
-
 /**
  * Debounce function to limit API calls.
  * @param {Function} func - Function to debounce.
@@ -454,10 +380,6 @@ async function editDocument(documentId) {
         if (!docData) {
             throw new Error('Document not found');
         }
-
-        // Reset selected values
-        editModalSelectedSubject = null;
-        editModalSelectedTeacher = null;
 
         showEditModal(docData);
     } catch (error) {
@@ -651,229 +573,6 @@ function showEditModal(docData) {
     initializeAutocomplete();
 }
 
-/**
- * Initialize autocomplete handlers for subject and teacher inputs.
- */
-function initializeAutocomplete() {
-    const subjectInput = document.getElementById('edit-subject-search');
-    const teacherInput = document.getElementById('edit-teacher-search');
-
-    const debouncedSubjectSearch = debounce(handleSubjectSearch, 300);
-    const debouncedTeacherSearch = debounce(handleTeacherSearch, 300);
-
-    if (subjectInput) {
-        subjectInput.addEventListener('input', debouncedSubjectSearch);
-        subjectInput.addEventListener('focus', () => handleSubjectSearch({ target: subjectInput }));
-        subjectInput.addEventListener('blur', () => {
-            // Delay hiding to allow click on results
-            setTimeout(() => hideAutocompleteResults('subject-autocomplete-results'), 200);
-        });
-    }
-
-    if (teacherInput) {
-        teacherInput.addEventListener('input', debouncedTeacherSearch);
-        teacherInput.addEventListener('focus', () => handleTeacherSearch({ target: teacherInput }));
-        teacherInput.addEventListener('blur', () => {
-            setTimeout(() => hideAutocompleteResults('teacher-autocomplete-results'), 200);
-        });
-    }
-}
-
-/**
- * Handle subject search input.
- * @param {Event} e - Input event.
- */
-async function handleSubjectSearch(e) {
-    const searchTerm = e.target.value.trim();
-    const resultsContainer = document.getElementById('subject-autocomplete-results');
-
-    try {
-        const subjects = await searchSubjects(searchTerm, 10);
-        showSubjectResults(subjects, resultsContainer);
-    } catch (error) {
-        console.error('Error searching subjects:', error);
-    }
-}
-
-/**
- * Handle teacher search input.
- * @param {Event} e - Input event.
- */
-async function handleTeacherSearch(e) {
-    const searchTerm = e.target.value.trim();
-    const resultsContainer = document.getElementById('teacher-autocomplete-results');
-
-    try {
-        const teachers = await searchTeachers(searchTerm, 10);
-        showTeacherResults(teachers, resultsContainer);
-    } catch (error) {
-        console.error('Error searching teachers:', error);
-    }
-}
-
-/**
- * Show subject autocomplete results using DOM methods.
- * @param {Array} subjects - Subject results.
- * @param {HTMLElement} container - Results container.
- */
-function showSubjectResults(subjects, container) {
-    if (!container) return;
-
-    // Clear existing results
-    container.textContent = '';
-
-    if (subjects.length === 0) {
-        const emptyItem = document.createElement('div');
-        emptyItem.className = 'autocomplete-item autocomplete-empty';
-        emptyItem.textContent = 'No subjects found';
-        container.appendChild(emptyItem);
-        container.style.display = 'block';
-        return;
-    }
-
-    subjects.forEach((s) => {
-        const item = document.createElement('div');
-        item.className = 'autocomplete-item';
-        item.onclick = () => selectSubject(s.id, s.name, s.semester);
-
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'autocomplete-item-name';
-        nameSpan.textContent = s.name;
-
-        const metaSpan = document.createElement('span');
-        metaSpan.className = 'autocomplete-item-meta';
-        metaSpan.textContent = `Semester ${s.semester}`;
-
-        item.appendChild(nameSpan);
-        item.appendChild(metaSpan);
-        container.appendChild(item);
-    });
-
-    container.style.display = 'block';
-}
-
-/**
- * Show teacher autocomplete results using DOM methods.
- * @param {Array} teachers - Teacher results.
- * @param {HTMLElement} container - Results container.
- */
-function showTeacherResults(teachers, container) {
-    if (!container) return;
-
-    // Clear existing results
-    container.textContent = '';
-
-    if (teachers.length === 0) {
-        const emptyItem = document.createElement('div');
-        emptyItem.className = 'autocomplete-item autocomplete-empty';
-        emptyItem.textContent = 'No teachers found';
-        container.appendChild(emptyItem);
-        container.style.display = 'block';
-        return;
-    }
-
-    teachers.forEach((t) => {
-        const item = document.createElement('div');
-        item.className = 'autocomplete-item';
-        item.onclick = () => selectTeacher(t.id, t.name);
-
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'autocomplete-item-name';
-        nameSpan.textContent = t.name;
-
-        item.appendChild(nameSpan);
-        container.appendChild(item);
-    });
-
-    container.style.display = 'block';
-}
-
-/**
- * Hide autocomplete results.
- * @param {string} containerId - Container element ID.
- */
-function hideAutocompleteResults(containerId) {
-    const container = document.getElementById(containerId);
-    if (container) {
-        container.style.display = 'none';
-    }
-}
-
-/**
- * Select a subject from autocomplete.
- * @param {number} id - Subject ID.
- * @param {string} name - Subject name.
- * @param {number} semester - Subject semester.
- */
-function selectSubject(id, name, semester) {
-    editModalSelectedSubject = { id, name, semester };
-    document.getElementById('edit-subject-id').value = id;
-    document.getElementById('edit-subject-search').value = `${name} (Sem ${semester})`;
-    hideAutocompleteResults('subject-autocomplete-results');
-    updateClearButton('subject');
-}
-
-/**
- * Select a teacher from autocomplete.
- * @param {number} id - Teacher ID.
- * @param {string} name - Teacher name.
- */
-function selectTeacher(id, name) {
-    editModalSelectedTeacher = { id, name };
-    document.getElementById('edit-teacher-id').value = id;
-    document.getElementById('edit-teacher-search').value = name;
-    hideAutocompleteResults('teacher-autocomplete-results');
-    updateClearButton('teacher');
-}
-
-/**
- * Clear subject selection.
- */
-function clearSubjectSelection() {
-    editModalSelectedSubject = null;
-    document.getElementById('edit-subject-id').value = '';
-    document.getElementById('edit-subject-search').value = '';
-    updateClearButton('subject');
-}
-
-/**
- * Clear teacher selection.
- */
-function clearTeacherSelection() {
-    editModalSelectedTeacher = null;
-    document.getElementById('edit-teacher-id').value = '';
-    document.getElementById('edit-teacher-search').value = '';
-    updateClearButton('teacher');
-}
-
-/**
- * Update clear button visibility using DOM methods.
- * @param {string} type - 'subject' or 'teacher'.
- */
-function updateClearButton(type) {
-    const container = document.getElementById(`edit-${type}-search`).closest('.autocomplete-container');
-    const existingBtn = container.querySelector('.clear-btn');
-    const selected = type === 'subject' ? editModalSelectedSubject : editModalSelectedTeacher;
-    const clearFn = type === 'subject' ? 'clearSubjectSelection' : 'clearTeacherSelection';
-
-    if (selected) {
-        if (!existingBtn) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'clear-btn';
-            btn.title = 'Clear selection';
-            btn.onclick = type === 'subject' ? clearSubjectSelection : clearTeacherSelection;
-            btn.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-                </svg>
-            `;
-            container.appendChild(btn);
-        }
-    } else if (existingBtn) {
-        existingBtn.remove();
-    }
-}
 
 /**
  * Close edit modal.
@@ -883,8 +582,6 @@ function closeEditModal() {
     if (overlay) {
         overlay.remove();
     }
-    editModalSelectedSubject = null;
-    editModalSelectedTeacher = null;
 }
 
 /**
@@ -897,15 +594,11 @@ async function handleEditFormSubmit(e) {
     const form = e.target;
     const documentId = parseInt(form.getAttribute('data-document-id'));
     const filename = document.getElementById('edit-filename').value.trim();
-    const subjectId = document.getElementById('edit-subject-id').value;
-    const teacherId = document.getElementById('edit-teacher-id').value;
 
     const updateData = {};
     if (filename) {
         updateData.filename = filename;
     }
-    updateData.subject_id = subjectId ? parseInt(subjectId) : null;
-    updateData.teacher_id = teacherId ? parseInt(teacherId) : null;
 
     try {
         await updateDocument(documentId, updateData);
@@ -917,60 +610,6 @@ async function handleEditFormSubmit(e) {
     }
 }
 
-/**
- * Show dialog to create new subject.
- */
-async function showCreateSubjectDialog() {
-    const name = prompt('Enter subject name:');
-    if (!name || !name.trim()) return;
-
-    const trimmedName = name.trim();
-    if (trimmedName.length > 255) {
-        alert('Subject name must be 255 characters or less.');
-        return;
-    }
-
-    const semester = prompt('Enter semester (1-12):');
-    if (!semester) return;
-
-    const semesterNum = parseInt(semester);
-    if (isNaN(semesterNum) || semesterNum < 1 || semesterNum > 12) {
-        alert('Invalid semester. Must be between 1 and 12.');
-        return;
-    }
-
-    try {
-        const subject = await createSubject(trimmedName, semesterNum);
-        // Select the newly created subject
-        selectSubject(subject.id, subject.name, subject.semester);
-    } catch (error) {
-        alert(`Failed to create subject: ${error.message}`);
-        console.error('Error creating subject:', error);
-    }
-}
-
-/**
- * Show dialog to create new teacher.
- */
-async function showCreateTeacherDialog() {
-    const name = prompt('Enter teacher name:');
-    if (!name || !name.trim()) return;
-
-    const trimmedName = name.trim();
-    if (trimmedName.length > 255) {
-        alert('Teacher name must be 255 characters or less.');
-        return;
-    }
-
-    try {
-        const teacher = await createTeacher(trimmedName);
-        // Select the newly created teacher
-        selectTeacher(teacher.id, teacher.name);
-    } catch (error) {
-        alert(`Failed to create teacher: ${error.message}`);
-        console.error('Error creating teacher:', error);
-    }
-}
 
 /**
  * Show loading overlay during file upload.
@@ -1299,8 +938,6 @@ window.AdminAPI = {
     updateDocument,
     deleteDocument: deleteDocumentApi,
     startProcessing,
-    createSubject,
-    createTeacher,
     reloadDocumentsTable,
     viewDocument,
     deleteDocumentWithConfirm,
@@ -1310,8 +947,6 @@ window.AdminAPI = {
     showEditModal,
     closeEditModal,
     handleEditFormSubmit,
-    showCreateSubjectDialog,
-    showCreateTeacherDialog,
     handleFilterChange,
     initializeFilterHandlers,
     uploadDocument,
@@ -1332,12 +967,6 @@ window.deleteDocument = deleteDocumentWithConfirm;
 window.startDocumentProcessing = startDocumentProcessing;
 window.editDocument = editDocument;
 window.closeEditModal = closeEditModal;
-window.showCreateSubjectDialog = showCreateSubjectDialog;
-window.showCreateTeacherDialog = showCreateTeacherDialog;
-window.clearSubjectSelection = clearSubjectSelection;
-window.clearTeacherSelection = clearTeacherSelection;
-window.selectSubject = selectSubject;
-window.selectTeacher = selectTeacher;
 
 // Initialize handlers when DOM is ready
 function initializeAllHandlers() {

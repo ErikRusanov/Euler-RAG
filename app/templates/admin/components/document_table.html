@@ -4,7 +4,6 @@
         <div class="table-header-cell">Filename</div>
         <div class="table-header-cell">Status</div>
         <div class="table-header-cell">Progress</div>
-        <div class="table-header-cell">Subject / Teacher</div>
         <div class="table-header-cell">Actions</div>
     </div>
     <div class="table-body">
@@ -28,16 +27,6 @@
                     </div>
                     <span class="progress-text">-</span>
                 </div>
-            </div>
-            <div class="table-cell table-cell-subject">
-                {% if document.subject %}
-                <span class="subject-name">{{ document.subject.name }}</span>
-                {% if document.teacher %}
-                <span class="teacher-name">{{ document.teacher.name }}</span>
-                {% endif %}
-                {% else %}
-                <span class="text-muted">Not assigned</span>
-                {% endif %}
             </div>
             <div class="table-cell">
                 <div class="action-buttons">

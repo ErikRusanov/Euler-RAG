@@ -10,8 +10,6 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.document_service import DocumentService
-from app.services.subject_service import SubjectService
-from app.services.teacher_service import TeacherService
 from app.utils.db import get_db_session
 
 T = TypeVar("T")
@@ -51,8 +49,6 @@ class ServiceDependencies:
     """Container for all service dependency injection functions."""
 
     document = ServiceDependency(DocumentService)
-    subject = ServiceDependency(SubjectService)
-    teacher = ServiceDependency(TeacherService)
 
 
 # Create singleton instance for easy access

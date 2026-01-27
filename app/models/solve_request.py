@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,13 +31,11 @@ class SolveRequest(BaseModel):
     """SolveRequest model for storing question solving requests.
 
     Represents a user's question that needs to be answered using RAG.
-    Tracks processing status, matched context, and generated answers.
+    Tracks processing status and generated answers.
 
     Attributes:
         question: The question text from the user
         subject_filter: Optional subject filter for context search
-        matched_subject_id: Foreign key to matched subject (nullable)
-        matched_teacher_id: Foreign key to matched teacher (nullable)
         answer: Generated answer text (nullable)
         chunks_used: JSONB field storing retrieved chunks information
         used_rag: Boolean flag indicating if RAG was used
@@ -63,14 +61,6 @@ class SolveRequest(BaseModel):
     question: Mapped[str] = mapped_column(Text, nullable=False)
     subject_filter: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True, default=None, index=True
-    )
-
-    # Matched context (nullable - may not find matches)
-    matched_subject_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("subjects.id"), nullable=True, default=None, index=True
-    )
-    matched_teacher_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("teachers.id"), nullable=True, default=None, index=True
     )
 
     # Answer and context

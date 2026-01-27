@@ -11,8 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions import RecordNotFoundError
 from app.models.document import DocumentStatus
 from app.services.document_service import DocumentService
-from app.services.subject_service import SubjectService
-from app.services.teacher_service import TeacherService
 from app.utils.api_helpers import get_pagination_context, get_progress_tracker
 from app.utils.db import get_db_session
 from app.utils.dependencies import dependencies
@@ -31,8 +29,6 @@ async def admin_documents(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=10, le=100),
     status_filter: Optional[str] = Query(default=None, alias="status"),
-    subject_id: Optional[int] = Query(default=None),
-    teacher_id: Optional[int] = Query(default=None),
 ) -> Response:
     """Display documents list with filters and pagination.
 
@@ -42,16 +38,12 @@ async def admin_documents(
         page: Current page number.
         page_size: Number of items per page.
         status_filter: Filter by document status.
-        subject_id: Filter by subject ID.
-        teacher_id: Filter by teacher ID.
 
     Returns:
         Rendered documents template.
     """
-    # Create services with shared session to avoid connection pool exhaustion
+    # Create service with shared session
     document_service = DocumentService(db)
-    subject_service = SubjectService(db)
-    teacher_service = TeacherService(db)
 
     # Convert status string to enum
     status_enum = None
@@ -61,32 +53,22 @@ async def admin_documents(
         except ValueError:
             logger.warning(f"Invalid status filter: {status_filter}")
 
-    # Get documents with relationships
+    # Get documents
     skip = (page - 1) * page_size
-    documents, total = await document_service.list_with_relationships(
-        skip=skip,
-        limit=page_size,
-        status=status_enum,
-        subject_id=subject_id,
-        teacher_id=teacher_id,
-    )
+    filters = {}
+    if status_enum is not None:
+        filters["status"] = status_enum
 
-    # Get filter options - only load subjects/teachers that have documents
-    # This avoids loading 10K+ objects when most are unused
-    subjects = await subject_service.get_with_documents()
-    teachers = await teacher_service.get_with_documents()
+    documents = await document_service.find(offset=skip, limit=page_size, **filters)
+    total = await document_service.count(**filters)
 
     # Build context
     context = {
         "request": request,
         "active_tab": "documents",
         "documents": documents,
-        "subjects": subjects,
-        "teachers": teachers,
         "current_filters": {
             "status": status_filter,
-            "subject_id": subject_id,
-            "teacher_id": teacher_id,
         },
         "pagination": get_pagination_context(page, page_size, total),
     }
@@ -95,40 +77,6 @@ async def admin_documents(
         request=request,
         name="admin/documents.html",
         context=context,
-    )
-
-
-@router.get("/admin/teachers")
-async def admin_teachers(request: Request) -> Response:
-    """Display coming soon page for teachers tab.
-
-    Args:
-        request: FastAPI request object.
-
-    Returns:
-        Rendered coming soon template.
-    """
-    return templates.TemplateResponse(
-        request=request,
-        name="admin/coming_soon.html",
-        context={"request": request, "active_tab": "teachers", "tab_name": "Teachers"},
-    )
-
-
-@router.get("/admin/subjects")
-async def admin_subjects(request: Request) -> Response:
-    """Display coming soon page for subjects tab.
-
-    Args:
-        request: FastAPI request object.
-
-    Returns:
-        Rendered coming soon template.
-    """
-    return templates.TemplateResponse(
-        request=request,
-        name="admin/coming_soon.html",
-        context={"request": request, "active_tab": "subjects", "tab_name": "Subjects"},
     )
 
 
