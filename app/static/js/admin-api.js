@@ -409,45 +409,6 @@ function showEditModal(docData) {
     const progressPage = docData.progress ? docData.progress.page : 0;
     const progressTotal = docData.progress ? docData.progress.total : 0;
 
-    // Store initial values if they exist
-    if (docData.subject_id) {
-        editModalSelectedSubject = {
-            id: docData.subject_id,
-            name: docData.subject_name || '',
-            semester: docData.subject_semester || 0,
-        };
-    }
-    if (docData.teacher_id) {
-        editModalSelectedTeacher = {
-            id: docData.teacher_id,
-            name: docData.teacher_name || '',
-        };
-    }
-
-    const subjectDisplayValue = editModalSelectedSubject
-        ? `${editModalSelectedSubject.name} (Sem ${editModalSelectedSubject.semester})`
-        : '';
-    const teacherDisplayValue = editModalSelectedTeacher
-        ? editModalSelectedTeacher.name
-        : '';
-
-    // Build clear button HTML only if there's a selection
-    const subjectClearBtn = editModalSelectedSubject ? `
-        <button type="button" class="clear-btn" onclick="clearSubjectSelection()" title="Clear selection">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-            </svg>
-        </button>
-    ` : '';
-
-    const teacherClearBtn = editModalSelectedTeacher ? `
-        <button type="button" class="clear-btn" onclick="clearTeacherSelection()" title="Clear selection">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-            </svg>
-        </button>
-    ` : '';
-
     // Create modal element using DOM methods for safety
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -479,52 +440,6 @@ function showEditModal(docData) {
                             class="form-input"
                             value="${escapeHtml(docData.filename)}"
                             placeholder="Enter filename">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Subject</label>
-                        <div class="input-with-addon">
-                            <div class="autocomplete-container">
-                                <input
-                                    type="text"
-                                    id="edit-subject-search"
-                                    class="form-input"
-                                    value="${escapeHtml(subjectDisplayValue)}"
-                                    placeholder="Search subjects..."
-                                    autocomplete="off">
-                                <input type="hidden" id="edit-subject-id" value="${docData.subject_id || ''}">
-                                <div id="subject-autocomplete-results" class="autocomplete-results"></div>
-                                ${subjectClearBtn}
-                            </div>
-                            <button type="button" class="addon-btn" onclick="showCreateSubjectDialog()" title="Create new subject">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Teacher</label>
-                        <div class="input-with-addon">
-                            <div class="autocomplete-container">
-                                <input
-                                    type="text"
-                                    id="edit-teacher-search"
-                                    class="form-input"
-                                    value="${escapeHtml(teacherDisplayValue)}"
-                                    placeholder="Search teachers..."
-                                    autocomplete="off">
-                                <input type="hidden" id="edit-teacher-id" value="${docData.teacher_id || ''}">
-                                <div id="teacher-autocomplete-results" class="autocomplete-results"></div>
-                                ${teacherClearBtn}
-                            </div>
-                            <button type="button" class="addon-btn" onclick="showCreateTeacherDialog()" title="Create new teacher">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                </svg>
-                            </button>
-                        </div>
                     </div>
 
                     <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Save Changes</button>
@@ -568,9 +483,6 @@ function showEditModal(docData) {
     document
         .getElementById('edit-document-form')
         .addEventListener('submit', handleEditFormSubmit);
-
-    // Attach autocomplete handlers
-    initializeAutocomplete();
 }
 
 
