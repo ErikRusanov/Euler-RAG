@@ -499,3 +499,272 @@ class TestDocumentProcessingFlow:
         # Verify error status
         await db_session.refresh(document)
         assert document.status == DocumentStatus.ERROR
+
+    @pytest.mark.asyncio
+    async def test_document_processing_with_embeddings(
+        self,
+        db_session: AsyncSession,
+        redis_client: Redis,
+        progress_tracker: ProgressTracker,
+    ):
+        """Test document processing generates embeddings for chunks.
+
+        1. Create document in DB
+        2. Process document with mocked S3, Mathpix, and EmbeddingService
+        3. Verify chunks have embeddings attached
+        """
+        # 1. Create document
+        pdf_bytes = create_test_pdf(1)
+
+        document = Document(
+            filename="embed_test.pdf",
+            s3_key="pdf/embed_test.pdf",
+            status=DocumentStatus.UPLOADED,
+        )
+        db_session.add(document)
+        await db_session.commit()
+        await db_session.refresh(document)
+
+        document_id = document.id
+
+        # 2. Mock dependencies
+        mock_s3 = MagicMock()
+        mock_s3.download_file = MagicMock(return_value=pdf_bytes)
+        mock_s3.get_file_url = MagicMock(return_value="https://example.com/test.pdf")
+
+        mock_mathpix = MagicMock()
+        mock_mathpix.extract_lines = AsyncMock(
+            return_value={
+                "pages": [
+                    {
+                        "page": 1,
+                        "lines": [
+                            {"text": "Introduction", "type": "header", "font_size": 14},
+                            {
+                                "text": "Some text content",
+                                "type": "text",
+                                "font_size": 12,
+                            },
+                        ],
+                    },
+                ]
+            }
+        )
+
+        # Mock EmbeddingService - returns 1024-dim vectors
+        mock_embedding_service = MagicMock()
+        mock_embedding_service.generate_embeddings_batch = AsyncMock(
+            return_value=[[0.1] * 1024]  # One chunk = one embedding
+        )
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        session_factory = async_sessionmaker(
+            bind=db_session.get_bind(),
+            expire_on_commit=False,
+            autoflush=False,
+        )
+
+        handler = DocumentHandler(
+            session_factory=session_factory,
+            s3=mock_s3,
+            progress_tracker=progress_tracker,
+            mathpix_client=mock_mathpix,
+            embedding_service=mock_embedding_service,
+        )
+
+        # 3. Process task
+        from app.workers.queue import Task
+
+        task = Task(
+            id="test-embed-task",
+            type=TaskType.DOCUMENT_PROCESS,
+            payload={"document_id": document_id},
+            stream_id="0-0",
+        )
+
+        await handler.process(task, db_session)
+        await db_session.commit()
+
+        # 4. Verify chunks have embeddings
+        result = await db_session.execute(
+            select(DocumentChunk).where(DocumentChunk.document_id == document_id)
+        )
+        chunks = list(result.scalars().all())
+
+        assert len(chunks) > 0
+        for chunk in chunks:
+            assert chunk.embedding is not None
+            assert len(chunk.embedding) == 1024
+
+        # Verify embedding service was called
+        mock_embedding_service.generate_embeddings_batch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_document_processing_embedding_api_failure(
+        self,
+        db_session: AsyncSession,
+        progress_tracker: ProgressTracker,
+    ):
+        """Test error handling when embedding API fails."""
+        pdf_bytes = create_test_pdf(1)
+
+        document = Document(
+            filename="embed_fail.pdf",
+            s3_key="pdf/embed_fail.pdf",
+            status=DocumentStatus.UPLOADED,
+        )
+        db_session.add(document)
+        await db_session.commit()
+        await db_session.refresh(document)
+
+        document_id = document.id
+
+        mock_s3 = MagicMock()
+        mock_s3.download_file = MagicMock(return_value=pdf_bytes)
+        mock_s3.get_file_url = MagicMock(return_value="https://example.com/test.pdf")
+
+        mock_mathpix = MagicMock()
+        mock_mathpix.extract_lines = AsyncMock(
+            return_value={
+                "pages": [
+                    {
+                        "page": 1,
+                        "lines": [
+                            {"text": "Some content", "type": "text", "font_size": 12},
+                        ],
+                    },
+                ]
+            }
+        )
+
+        # Mock EmbeddingService that fails
+        mock_embedding_service = MagicMock()
+        mock_embedding_service.generate_embeddings_batch = AsyncMock(
+            side_effect=Exception("OpenRouter API error")
+        )
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        session_factory = async_sessionmaker(
+            bind=db_session.get_bind(),
+            expire_on_commit=False,
+            autoflush=False,
+        )
+
+        handler = DocumentHandler(
+            session_factory=session_factory,
+            s3=mock_s3,
+            progress_tracker=progress_tracker,
+            mathpix_client=mock_mathpix,
+            embedding_service=mock_embedding_service,
+        )
+
+        from app.workers.handlers.base import TaskError
+        from app.workers.queue import Task
+
+        task = Task(
+            id="test-embed-fail-task",
+            type=TaskType.DOCUMENT_PROCESS,
+            payload={"document_id": document_id},
+            stream_id="0-0",
+        )
+
+        # Process should raise TaskError
+        with pytest.raises(TaskError) as exc_info:
+            await handler.process(task, db_session)
+
+        assert exc_info.value.retryable is True
+        assert "Embedding generation failed" in str(exc_info.value)
+
+        await db_session.commit()
+
+        # Verify error status
+        await db_session.refresh(document)
+        assert document.status == DocumentStatus.ERROR
+
+    @pytest.mark.asyncio
+    async def test_document_processing_without_embedding_service(
+        self,
+        db_session: AsyncSession,
+        redis_client: Redis,
+        progress_tracker: ProgressTracker,
+    ):
+        """Test document processing works without embedding service (optional).
+
+        This ensures backward compatibility - documents can be processed
+        without generating embeddings if service is not configured.
+        """
+        pdf_bytes = create_test_pdf(1)
+
+        document = Document(
+            filename="no_embed.pdf",
+            s3_key="pdf/no_embed.pdf",
+            status=DocumentStatus.UPLOADED,
+        )
+        db_session.add(document)
+        await db_session.commit()
+        await db_session.refresh(document)
+
+        document_id = document.id
+
+        mock_s3 = MagicMock()
+        mock_s3.download_file = MagicMock(return_value=pdf_bytes)
+        mock_s3.get_file_url = MagicMock(return_value="https://example.com/test.pdf")
+
+        mock_mathpix = MagicMock()
+        mock_mathpix.extract_lines = AsyncMock(
+            return_value={
+                "pages": [
+                    {
+                        "page": 1,
+                        "lines": [
+                            {"text": "Content", "type": "text", "font_size": 12},
+                        ],
+                    },
+                ]
+            }
+        )
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        session_factory = async_sessionmaker(
+            bind=db_session.get_bind(),
+            expire_on_commit=False,
+            autoflush=False,
+        )
+
+        # Handler without embedding service
+        handler = DocumentHandler(
+            session_factory=session_factory,
+            s3=mock_s3,
+            progress_tracker=progress_tracker,
+            mathpix_client=mock_mathpix,
+            embedding_service=None,
+        )
+
+        from app.workers.queue import Task
+
+        task = Task(
+            id="test-no-embed-task",
+            type=TaskType.DOCUMENT_PROCESS,
+            payload={"document_id": document_id},
+            stream_id="0-0",
+        )
+
+        await handler.process(task, db_session)
+        await db_session.commit()
+
+        # Verify chunks created but without embeddings
+        result = await db_session.execute(
+            select(DocumentChunk).where(DocumentChunk.document_id == document_id)
+        )
+        chunks = list(result.scalars().all())
+
+        assert len(chunks) > 0
+        for chunk in chunks:
+            assert chunk.embedding is None
+
+        # Verify document status is still READY
+        await db_session.refresh(document)
+        assert document.status == DocumentStatus.READY

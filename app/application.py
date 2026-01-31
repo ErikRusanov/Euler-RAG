@@ -18,6 +18,10 @@ from app.api.router import (
 from app.config import Settings, get_settings
 from app.middleware.auth import APIKeyMiddleware
 from app.middleware.cookie_auth import CookieAuthMiddleware
+from app.services.embedding_service import (
+    close_embedding_service,
+    init_embedding_service,
+)
 from app.utils.db import close_db, init_db
 from app.utils.exception_handlers import register_exception_handlers
 from app.utils.mathpix import close_mathpix, init_mathpix
@@ -52,6 +56,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     s3_initialized = False
     redis_initialized = False
     mathpix_initialized = False
+    embedding_initialized = False
     workers_started = False
 
     try:
@@ -68,6 +73,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         init_mathpix()
         mathpix_initialized = True
 
+        # Initialize embedding service (optional, may be None if not configured)
+        init_embedding_service()
+        embedding_initialized = True
+
         await worker_manager.start()
         workers_started = True
 
@@ -82,6 +91,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             except Exception as cleanup_error:
                 logger.error(
                     "Error stopping workers during cleanup",
+                    extra={"error": str(cleanup_error)},
+                    exc_info=True,
+                )
+
+        if embedding_initialized:
+            try:
+                await close_embedding_service()
+            except Exception as cleanup_error:
+                logger.error(
+                    "Error closing embedding service during cleanup",
                     extra={"error": str(cleanup_error)},
                     exc_info=True,
                 )
@@ -132,6 +151,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("Shutting down application...")
     await worker_manager.stop()
+    await close_embedding_service()
     close_mathpix()
     await close_redis()
     close_s3()

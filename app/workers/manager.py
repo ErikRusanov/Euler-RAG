@@ -9,6 +9,7 @@ import logging
 
 from app.config import get_settings
 from app.services.chunking_service import ChunkingService
+from app.services.embedding_service import get_embedding_service
 from app.utils.db import db_manager
 from app.utils.mathpix import get_mathpix_client
 from app.utils.redis import get_redis_client
@@ -65,6 +66,7 @@ class WorkerManager:
         s3 = get_s3_storage()
         mathpix = get_mathpix_client()
         chunking_service = ChunkingService()
+        embedding_service = get_embedding_service()
 
         self._handlers = {
             TaskType.DOCUMENT_PROCESS: DocumentHandler(
@@ -73,6 +75,7 @@ class WorkerManager:
                 progress_tracker=progress_tracker,
                 mathpix_client=mathpix,
                 chunking_service=chunking_service,
+                embedding_service=embedding_service,
             ),
         }
 

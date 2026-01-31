@@ -19,6 +19,7 @@ from app.models.document import Document, DocumentStatus
 from app.models.document_chunk import DocumentChunk
 from app.models.document_line import DocumentLine
 from app.services.chunking_service import ChunkingService
+from app.services.embedding_service import EmbeddingService
 from app.utils.mathpix import MathpixClient
 from app.utils.s3 import S3Storage
 from app.workers.handlers.base import BaseTaskHandler, TaskError
@@ -51,6 +52,7 @@ class DocumentHandler(BaseTaskHandler):
         progress_tracker: ProgressTracker,
         mathpix_client: Optional[MathpixClient] = None,
         chunking_service: Optional[ChunkingService] = None,
+        embedding_service: Optional[EmbeddingService] = None,
     ) -> None:
         """Initialize DocumentHandler.
 
@@ -60,12 +62,15 @@ class DocumentHandler(BaseTaskHandler):
             progress_tracker: Progress tracker for real-time updates.
             mathpix_client: Optional Mathpix OCR client for line extraction.
             chunking_service: Optional chunking service for content splitting.
+            embedding_service: Optional embedding service for generating
+                vector embeddings for document chunks.
         """
         super().__init__(session_factory)
         self._s3 = s3
         self._progress = progress_tracker
         self._mathpix = mathpix_client
         self._chunking_service = chunking_service or ChunkingService()
+        self._embedding_service = embedding_service
 
     async def process(self, task: Task, db: AsyncSession) -> None:
         """Process document task.
@@ -483,6 +488,12 @@ class DocumentHandler(BaseTaskHandler):
         # Convert chunk dictionaries to DocumentChunk objects
         document_chunks = self._convert_chunks_to_models(document_id, chunks_data)
 
+        # Generate embeddings for chunks if embedding service is available
+        if self._embedding_service and document_chunks:
+            await self._generate_embeddings_for_chunks(
+                document_id, document_chunks, total_pages
+            )
+
         # Save chunks to database in bulk
         db.add_all(document_chunks)
         await db.flush()
@@ -492,6 +503,7 @@ class DocumentHandler(BaseTaskHandler):
             extra={
                 "document_id": document_id,
                 "num_chunks": len(document_chunks),
+                "has_embeddings": self._embedding_service is not None,
             },
         )
 
@@ -529,6 +541,70 @@ class DocumentHandler(BaseTaskHandler):
             document_chunks.append(document_chunk)
 
         return document_chunks
+
+    async def _generate_embeddings_for_chunks(
+        self,
+        document_id: int,
+        chunks: List[DocumentChunk],
+        total_pages: int,
+    ) -> None:
+        """Generate embeddings for document chunks.
+
+        Uses the embedding service to generate vector embeddings for each
+        chunk's text content. The embeddings are attached to the chunk
+        objects in place.
+
+        Args:
+            document_id: Document ID for logging.
+            chunks: List of DocumentChunk objects to generate embeddings for.
+            total_pages: Total pages in document for progress updates.
+
+        Raises:
+            TaskError: If embedding generation fails.
+        """
+        logger.info(
+            "Generating embeddings for chunks",
+            extra={"document_id": document_id, "num_chunks": len(chunks)},
+        )
+
+        await self._progress.update(
+            Progress(
+                document_id=document_id,
+                page=0,
+                total=total_pages,
+                status="processing",
+                message="Generating embeddings...",
+            )
+        )
+
+        # Extract text from all chunks
+        chunk_texts = [chunk.text for chunk in chunks]
+
+        try:
+            # Generate embeddings in batch
+            embeddings = await self._embedding_service.generate_embeddings_batch(
+                chunk_texts
+            )
+
+            # Attach embeddings to chunks
+            for chunk, embedding in zip(chunks, embeddings):
+                chunk.embedding = embedding
+
+            logger.info(
+                "Embeddings generated successfully",
+                extra={
+                    "document_id": document_id,
+                    "num_embeddings": len(embeddings),
+                },
+            )
+
+        except Exception as e:
+            logger.error(
+                "Embedding generation failed",
+                extra={"document_id": document_id, "error": str(e)},
+                exc_info=True,
+            )
+            raise TaskError(f"Embedding generation failed: {e}", retryable=True)
 
     @staticmethod
     def _count_pdf_pages(pdf_bytes: bytes) -> int:

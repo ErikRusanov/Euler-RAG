@@ -2,11 +2,11 @@
 
 import asyncio
 import logging
-from typing import List
+from typing import List, Optional
 
 import httpx
 
-from app.config import Settings
+from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -168,3 +168,73 @@ class EmbeddingService:
         close the HTTP connection pool.
         """
         await self.client.aclose()
+
+
+class EmbeddingServiceManager:
+    """Manager for EmbeddingService singleton instance.
+
+    Provides lifecycle management for the embedding service, ensuring
+    proper initialization and cleanup of HTTP resources.
+    """
+
+    def __init__(self) -> None:
+        """Initialize EmbeddingServiceManager with None service."""
+        self.service: Optional[EmbeddingService] = None
+
+    def init_service(self) -> Optional[EmbeddingService]:
+        """Initialize EmbeddingService from settings.
+
+        Returns:
+            Initialized EmbeddingService instance, or None if not configured.
+        """
+        if self.service is not None:
+            return self.service
+
+        settings = get_settings()
+
+        if not settings.openrouter_api_key:
+            logger.warning(
+                "OpenRouter API key not configured, embedding service disabled"
+            )
+            return None
+
+        self.service = EmbeddingService(settings)
+        return self.service
+
+
+# Global embedding service manager instance
+embedding_service_manager = EmbeddingServiceManager()
+
+
+def init_embedding_service() -> Optional[EmbeddingService]:
+    """Initialize embedding service.
+
+    Returns:
+        Initialized EmbeddingService instance, or None if not configured.
+    """
+    logger.info("Initializing embedding service...")
+    service = embedding_service_manager.init_service()
+    if service:
+        logger.info("Embedding service initialized successfully")
+    return service
+
+
+def get_embedding_service() -> Optional[EmbeddingService]:
+    """Get embedding service instance.
+
+    Returns:
+        EmbeddingService instance, or None if not initialized/configured.
+    """
+    return embedding_service_manager.service
+
+
+async def close_embedding_service() -> None:
+    """Close embedding service and clean up HTTP resources.
+
+    Should be called during application shutdown.
+    """
+    logger.info("Closing embedding service...")
+    if embedding_service_manager.service:
+        await embedding_service_manager.service.close()
+    embedding_service_manager.service = None
+    logger.info("Embedding service closed")
