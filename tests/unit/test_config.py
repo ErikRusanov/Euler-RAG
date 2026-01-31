@@ -96,3 +96,47 @@ class TestSettings:
         settings2 = get_settings()
 
         assert settings1 is settings2
+
+    def test_openrouter_settings_loads_from_env(self, monkeypatch):
+        """OpenRouter settings load from environment variables."""
+        monkeypatch.setenv(
+            "OPENROUTER_API_KEY", "sk-or-v1-test-key-with-minimum-32-chars"
+        )
+        monkeypatch.setenv("OPENROUTER_BASE_URL", "https://test.openrouter.ai/api/v1")
+        monkeypatch.setenv("OPENROUTER_EMBEDDING_MODEL", "test/model")
+        monkeypatch.setenv("EMBEDDING_DIMENSIONS", "1536")
+        monkeypatch.setenv("EMBEDDING_BATCH_SIZE", "100")
+        monkeypatch.setenv("EMBEDDING_TIMEOUT", "60.0")
+
+        settings = Settings()
+
+        assert settings.openrouter_api_key == "sk-or-v1-test-key-with-minimum-32-chars"
+        assert settings.openrouter_base_url == "https://test.openrouter.ai/api/v1"
+        assert settings.openrouter_embedding_model == "test/model"
+        assert settings.embedding_dimensions == 1536
+        assert settings.embedding_batch_size == 100
+        assert settings.embedding_timeout == 60.0
+
+    def test_openrouter_settings_uses_defaults(self, monkeypatch):
+        """OpenRouter settings use default values when not specified."""
+        monkeypatch.setenv(
+            "OPENROUTER_API_KEY", "sk-or-v1-test-key-with-minimum-32-chars"
+        )
+
+        settings = Settings()
+
+        assert settings.openrouter_base_url == "https://openrouter.ai/api/v1"
+        assert settings.openrouter_embedding_model == "openai/text-embedding-3-large"
+        assert settings.embedding_dimensions == 1024
+        assert settings.embedding_batch_size == 50
+        assert settings.embedding_timeout == 30.0
+
+    def test_openrouter_api_key_validation_rejects_short_key(self, monkeypatch):
+        """OpenRouter API key must be at least 32 characters."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "short-key")
+
+        with pytest.raises(ValidationError) as exc_info:
+            Settings()
+
+        errors = exc_info.value.errors()
+        assert any(error["loc"] == ("openrouter_api_key",) for error in errors)

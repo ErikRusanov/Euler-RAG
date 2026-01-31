@@ -118,6 +118,36 @@ class Settings(BaseSettings):
         description="Mathpix application key for PDF OCR processing",
     )
 
+    # OpenRouter API Configuration
+    openrouter_api_key: str = Field(
+        default="",
+        description="OpenRouter API key for embedding generation",
+    )
+    openrouter_base_url: str = Field(
+        default="https://openrouter.ai/api/v1",
+        description="OpenRouter API base URL",
+    )
+    openrouter_embedding_model: str = Field(
+        default="openai/text-embedding-3-large",
+        description="OpenRouter embedding model identifier",
+    )
+    embedding_dimensions: int = Field(
+        default=1024,
+        ge=1,
+        description="Embedding vector dimensions",
+    )
+    embedding_batch_size: int = Field(
+        default=50,
+        ge=1,
+        le=1000,
+        description="Number of texts to embed in a single batch",
+    )
+    embedding_timeout: float = Field(
+        default=30.0,
+        gt=0.0,
+        description="Timeout for embedding API requests in seconds",
+    )
+
     @field_validator("db_password")
     @classmethod
     def validate_db_password_in_production(cls, v: str, info) -> str:
@@ -137,6 +167,14 @@ class Settings(BaseSettings):
             raise ValueError("API key must be set")
         if environment == "production" and len(v) < 32:
             raise ValueError("API key must be at least 32 characters in production")
+        return v
+
+    @field_validator("openrouter_api_key")
+    @classmethod
+    def validate_openrouter_api_key(cls, v: str, info) -> str:
+        """Ensure OpenRouter API key meets minimum length requirement."""
+        if v and len(v) < 32:
+            raise ValueError("OpenRouter API key must be at least 32 characters")
         return v
 
     @property
