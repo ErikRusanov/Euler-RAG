@@ -93,9 +93,22 @@ async def db_session(test_settings: Settings) -> AsyncGenerator[AsyncSession, No
         pool_pre_ping=True,
     )
 
-    # Create all tables (application + test tables)
+    # Enable pgvector extension and create all tables
     async with engine.begin() as conn:
+        # Enable pgvector extension if not already enabled
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        # Create HNSW index for embedding column if not exists
+        await conn.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_chunk_embedding_cosine
+                ON document_chunks
+                USING hnsw (embedding vector_cosine_ops)
+                WITH (m = 16, ef_construction = 200)
+            """
+            )
+        )
 
     session_factory = async_sessionmaker(
         engine,
@@ -133,8 +146,21 @@ def cleanup_test_database(test_settings: Settings):
         """Truncate all tables at session start."""
         engine = create_async_engine(test_settings.database_url)
         async with engine.begin() as conn:
+            # Enable pgvector extension if not already enabled
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             # Create tables if they don't exist
             await conn.run_sync(Base.metadata.create_all)
+            # Create HNSW index for embedding column if not exists
+            await conn.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_chunk_embedding_cosine
+                    ON document_chunks
+                    USING hnsw (embedding vector_cosine_ops)
+                    WITH (m = 16, ef_construction = 200)
+                """
+                )
+            )
             # Truncate all tables
             for table in reversed(Base.metadata.sorted_tables):
                 await conn.execute(

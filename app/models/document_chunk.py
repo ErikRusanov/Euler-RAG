@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+from app.utils.vector_types import Vector
 
 
 class DocumentChunk(BaseModel):
@@ -95,6 +96,11 @@ class DocumentChunk(BaseModel):
         PGUUID(as_uuid=True), nullable=True, unique=True
     )
     token_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Vector embedding for RAG
+    embedding: Mapped[Optional[list[float]]] = mapped_column(
+        Vector(1024), nullable=True
+    )
 
     # Relationships (lazy='noload' for optimized queries)
     document: Mapped["Document"] = relationship(
